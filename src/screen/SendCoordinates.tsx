@@ -1,55 +1,71 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { USER_PROFILE_MOCK } from '../data/personMock';
-import { sendUserData } from '../actions/bringInformationPost';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
+import { MyCustomHeader } from '../components/header/MyCustomHeader';
+
+import { updateBurritoLocation, stopBurritoService } from '../services/firebaseService';
+import Geolocation from '@react-native-community/geolocation';
 
 export const SendCoordinates = () => {
 
 
   const [isSending, setIsSending] = useState<boolean>(false); 
-  const saveIntervalIdRef = useRef<any>(null);
-  const indexUserRef = useRef<number>(0);
-
+  const intervalIdRef = useRef<number | null>(null);
 
   const startProcess = () => {
-
     setIsSending(true); 
 
-    saveIntervalIdRef.current = setInterval( async () => {
+    const runUpdate = () => {
+        Geolocation.getCurrentPosition(
+            async (position) => {
+                const { latitude, longitude, heading, speed } = position.coords;
+                
+                const success = await updateBurritoLocation({
+                    latitude,
+                    longitude,
+                    heading: heading || 0, 
+                    speed: speed || 0      
+                });
 
-        const user = USER_PROFILE_MOCK[indexUserRef.current];
+                if (success) console.log('Coordenada subida:', latitude, longitude);
+            },
+            error => console.log('Error GPS:', error),
+            // Configuración GPS: Alta precisión, timeout de 20s, caché máx 1s.
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 1000 }
+        );
+    };
 
+    runUpdate();
 
-      const success = await sendUserData(user)
-
-      if ( success ) {
-        console.log('Enviado con exito')
-      }
-
-      indexUserRef.current = ( indexUserRef.current + 1 ) % USER_PROFILE_MOCK.length;
-
-    }, 4000 )
+    intervalIdRef.current = setInterval(runUpdate, 3000); 
   }
 
-
-  const stopProcess = () => {
-
-    if (saveIntervalIdRef.current) {
-        clearInterval(saveIntervalIdRef.current);
-        saveIntervalIdRef.current = null;
+  const stopProcess = async () => {
+    if (intervalIdRef.current) {
+        clearInterval(intervalIdRef.current);
+        intervalIdRef.current = null;
     }
-    setIsSending(false);
+    
+    setIsSending(false); 
+
+    await stopBurritoService();
+    Alert.alert("Servicio Detenido", "Se desconectó de la nube.");
   }
 
   useEffect(() => {
     return () => {
-      stopProcess();
+      if (intervalIdRef.current) clearInterval(intervalIdRef.current);
     }
-  }, []) 
+  }, [])
   
   
   return (
     <View style={styles.container}> 
+
+        <MyCustomHeader 
+          title=' DRIVER '
+        />
+
+        <View style={styles.body}> 
         <Pressable
           disabled = {isSending}
           onPress={startProcess}
@@ -60,7 +76,7 @@ export const SendCoordinates = () => {
             }
           ]}
         >
-          <Text style={{color: 'white'}} > { isSending ? 'ENVIANDO...' : 'ENVIAR'} </Text>
+          <Text style={{color: 'white'}} > { isSending ? 'TRANSMITIENDO DATOS' : 'ENVIAR COORDENADAS'} </Text>
         </Pressable>
 
         <Pressable
@@ -76,6 +92,8 @@ export const SendCoordinates = () => {
           <Text style={{color: 'white'}} > DETENER </Text>
         </Pressable>
         <Text> { isSending ? 'Enviando datos' : 'Envie sus datos' } </Text>
+          
+        </View>
     </View>
   )
 }
@@ -84,6 +102,10 @@ export const SendCoordinates = () => {
 const styles = StyleSheet.create({
 
   container: {
+    flex: 1,
+  },
+
+  body: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',

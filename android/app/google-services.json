@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "677410027288",
+    "project_id": "burritounmsm",
+    "storage_bucket": "burritounmsm.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:677410027288:android:810e95c0aa9479435f506d",
+        "android_client_info": {
+          "package_name": "com.burritodriverapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCxLs5m8QV5FrdtrCygDqLTgEkR9FnRpGs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
