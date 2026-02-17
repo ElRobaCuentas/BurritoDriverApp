@@ -9,7 +9,6 @@ export const DriverApp = () => {
             <SendCoordinates />
         </SafeAreaView>
     </SafeAreaProvider>
-
-
+  
   )
 }

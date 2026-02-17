@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
 import { MyCustomHeader } from '../components/header/MyCustomHeader';
 
-import { updateBurritoLocation, stopBurritoService } from '../services/firebaseService';
+import { updateBurritoLocation, stopBurritoService } from '../services/firebase_service';
 import Geolocation from '@react-native-community/geolocation';
 
 export const SendCoordinates = () => {
