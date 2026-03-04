@@ -16,8 +16,8 @@ import BackgroundJob from 'react-native-background-actions';
 import Geolocation, { GeolocationResponse } from '@react-native-community/geolocation';
 
 // ─── Configuraciones Core ──────────────────────────────────────────────────────
-const SEND_INTERVAL_MS = 3000; 
-const GPS_TIMEOUT_MS = 2500; 
+const SEND_INTERVAL_MS = 3000; // 🚌 VOLVEMOS A TUS 3 SEGUNDOS (Movimiento Suave)
+const GPS_TIMEOUT_MS = 5000;   // ⏱️ 5 segundos de tolerancia para despertar el GPS
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -39,28 +39,44 @@ const backgroundOptions = {
     parameters: { delay: SEND_INTERVAL_MS },
 };
 
-// ─── Task de background: POLLING ACTIVO (Limpio y sin Antipatrones) ────────────
+// ─── Task de background: POLLING ACTIVO (Con Latido de Respaldo) ────────────
 const locationTask = async (taskDataArguments: any) => {
     const { delay } = taskDataArguments;
+
+    // 🔥 Memoria de la última posición conocida
+    let lastLat = 0;
+    let lastLng = 0;
 
     while (BackgroundJob.isRunning()) {
         try {
             // 1. Intentamos leer el hardware GPS
             const position = await getCurrentPositionAsync();
-            const { latitude, longitude, heading, speed } = position.coords;
+            lastLat = position.coords.latitude;
+            lastLng = position.coords.longitude;
 
-            // 2. Enviamos a Firebase (Persistencia offline lo protege sin internet)
+            // 2. Enviamos el dato real a Firebase
             await updateBurritoLocation({
-                latitude,
-                longitude,
-                heading: heading ?? 0,
-                speed:   speed   ?? 0,
+                latitude: lastLat,
+                longitude: lastLng,
+                heading: position.coords.heading ?? 0,
+                speed:   position.coords.speed ?? 0,
             });
-            console.log(`🛰️ OK: lat: ${latitude.toFixed(5)}, lng: ${longitude.toFixed(5)}`);
+            console.log(`🛰️ GPS OK: lat: ${lastLat.toFixed(5)}, lng: ${lastLng.toFixed(5)}`);
             
         } catch (err: any) {
-            // 3. Captura exclusiva de errores de satélite GPS
-            console.log('⚠️ Buscando satélites GPS...', err.message || err);
+            console.log('⚠️ GPS tardó mucho en despertar...', err.message || err);
+            
+            // 3. LATIDO DE RESPALDO: Si el GPS falló, enviamos la última posición
+            // Esto garantiza que Firebase siga recibiendo un 'timestamp' nuevo y el bus no muera
+            if (lastLat !== 0) {
+                await updateBurritoLocation({
+                    latitude: lastLat,
+                    longitude: lastLng,
+                    heading: 0,
+                    speed: 0, // 0 porque si perdimos GPS, asumimos que estamos sin señal
+                });
+                console.log('💓 Enviando latido de respaldo a Firebase...');
+            }
         }
         
         await sleep(delay);

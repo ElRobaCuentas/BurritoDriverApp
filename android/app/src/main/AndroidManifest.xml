@@ -31,8 +31,11 @@
         </intent-filter>
       </activity>
 
-      <service android:name="com.asterinet.react.bgactions.RNBackgroundActionsTask"
-               android:foregroundServiceType="location" />
+      <service 
+          android:name="com.asterinet.react.bgactions.RNBackgroundActionsTask"
+          android:foregroundServiceType="location"
+          android:stopWithTask="false" 
+          android:exported="true" />
 
     </application>
 </manifest>
