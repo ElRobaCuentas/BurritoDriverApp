@@ -6,13 +6,14 @@ interface LocationData {
   heading: number;
   speed: number;
 }
+
 const BURRITO_LOCATION_PATH = '/ubicacion_burrito';
 
 export const updateBurritoLocation = async (data: LocationData) => {
   try {
-    await database().ref(BURRITO_LOCATION_PATH).set({
+    await database().ref(BURRITO_LOCATION_PATH).update({
       ...data,
-      timestamp: Date.now(),
+      timestamp: database.ServerValue.TIMESTAMP,
       isActive: true,
     });
     

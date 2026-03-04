@@ -1,119 +1,148 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Alert, Pressable, StyleSheet, Text, View, PermissionsAndroid, Platform } from 'react-native';
 import { MyCustomHeader } from '../components/header/MyCustomHeader';
-
 import { updateBurritoLocation, stopBurritoService } from '../services/firebase_service';
 import Geolocation from '@react-native-community/geolocation';
 
+import BackgroundJob from 'react-native-background-actions';
+
+const sleep = (time: number) => new Promise<void>((resolve) => setTimeout(() => resolve(), time));
+
+const backgroundOptions = {
+    taskName: 'BurritoTracker',
+    taskTitle: 'El Burrito está en ruta 🚌',
+    taskDesc: 'Transmitiendo ubicación en tiempo real...',
+    taskIcon: { name: 'ic_launcher', type: 'mipmap' },
+    color: '#2060cd',
+    parameters: { delay: 3000 },
+};
+
 export const SendCoordinates = () => {
-
-
   const [isSending, setIsSending] = useState<boolean>(false); 
-  const intervalIdRef = useRef<number | null>(null);
+  const watchIdRef = useRef<number | null>(null);
 
-  const startProcess = () => {
-    setIsSending(true); 
+  const requestPermissions = async () => {
+    if (Platform.OS === 'android') {
+        try {
+            const granted = await PermissionsAndroid.requestMultiple([
+                PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+                PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS, 
+            ]);
 
-    const runUpdate = () => {
-        Geolocation.getCurrentPosition(
-            async (position) => {
-                const { latitude, longitude, heading, speed } = position.coords;
-                
-                const success = await updateBurritoLocation({
-                    latitude,
-                    longitude,
-                    heading: heading || 0, 
-                    speed: speed || 0      
-                });
+            if (granted[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION] === PermissionsAndroid.RESULTS.GRANTED) {
+                if (Platform.Version >= 29) { // Android 10+
+                    const backgroundGranted = await PermissionsAndroid.request(
+                        PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+                        {
+                            title: "Ubicación en Segundo Plano",
+                            message: "El Burrito necesita acceder a la ubicación incluso cuando la app está cerrada para que los estudiantes puedan ver por dónde vas.",
+                            buttonPositive: "Permitir siempre"
+                        }
+                    );
+                    if (backgroundGranted !== PermissionsAndroid.RESULTS.GRANTED) {
+                        console.warn("Permiso de segundo plano denegado. El GPS morirá si se apaga la pantalla.");
+                    }
+                }
+            }
+        } catch (err) {
+            console.warn("Error pidiendo permisos:", err);
+        }
+    }
+  };
 
-                if (success) console.log('Coordenada subida:', latitude, longitude);
-            },
-            error => console.log('Error GPS:', error),
-            // Configuración GPS: Alta precisión, timeout de 20s, caché máx 1s.
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 1000 }
-        );
-    };
+  useEffect(() => {
+      requestPermissions();
+  }, []);
 
-    runUpdate();
+  const locationTask = async (taskDataArguments: any) => {
+      await new Promise<void>(async (resolve) => {
+          
+          watchIdRef.current = Geolocation.watchPosition(
+              async (position) => {
+                  const { latitude, longitude, heading, speed } = position.coords;
+                  
+                  await updateBurritoLocation({
+                      latitude,
+                      longitude,
+                      heading: heading || 0, 
+                      speed: speed || 0      
+                  });
+                  console.log('🛰️ Enviando GPS:', latitude, longitude);
+              },
+              (error) => console.log('❌ Error GPS:', error),
+              { 
+                enableHighAccuracy: true, 
+                distanceFilter: 2,
+                interval: 3000, 
+                fastestInterval: 2000 
+              }
+          );
 
-    intervalIdRef.current = setInterval(runUpdate, 3000); 
+          while (BackgroundJob.isRunning()) {
+              await sleep(taskDataArguments.delay);
+          }
+          resolve();
+      });
+  };
+
+  const startProcess = async () => {
+    try {
+        setIsSending(true); 
+        await BackgroundJob.start(locationTask, backgroundOptions);
+    } catch (e) {
+        setIsSending(false);
+        Alert.alert("Error", "No se pudo activar el servicio de fondo.");
+    }
   }
 
   const stopProcess = async () => {
-    if (intervalIdRef.current) {
-        clearInterval(intervalIdRef.current);
-        intervalIdRef.current = null;
+    if (watchIdRef.current !== null) {
+        Geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
     }
-    
     setIsSending(false); 
-
+    await BackgroundJob.stop();
     await stopBurritoService();
-    Alert.alert("Servicio Detenido", "Se desconectó de la nube.");
   }
 
   useEffect(() => {
     return () => {
-      if (intervalIdRef.current) clearInterval(intervalIdRef.current);
+      if (watchIdRef.current !== null) Geolocation.clearWatch(watchIdRef.current);
+      BackgroundJob.stop(); 
     }
-  }, [])
-  
+  }, []);
   
   return (
     <View style={styles.container}> 
-
-        <MyCustomHeader 
-          title=' DRIVER '
-        />
-
+        <MyCustomHeader title=' DRIVER APP ' />
         <View style={styles.body}> 
-        <Pressable
-          disabled = {isSending}
-          onPress={startProcess}
-          style={({pressed}) => [
-            styles.button,
-            {
-              backgroundColor: isSending ? '#757575' : '#2060cd',
-            }
-          ]}
-        >
-          <Text style={{color: 'white'}} > { isSending ? 'TRANSMITIENDO DATOS' : 'ENVIAR COORDENADAS'} </Text>
-        </Pressable>
+            <Pressable
+              disabled={isSending}
+              onPress={startProcess}
+              style={[styles.button, { backgroundColor: isSending ? '#757575' : '#2060cd' }]}
+            >
+              <Text style={styles.btnText}> { isSending ? 'TRANSMITIENDO...' : 'INICIAR RUTA'} </Text>
+            </Pressable>
 
-        <Pressable
-          disabled = {!isSending}
-          onPress={stopProcess}
-          style={({pressed}) => [
-            styles.button,
-            {
-              backgroundColor: isSending ? '#2060cd' : '#757575',
-            }
-          ]}
-        >
-          <Text style={{color: 'white'}} > DETENER </Text>
-        </Pressable>
-        <Text> { isSending ? 'Enviando datos' : 'Envie sus datos' } </Text>
-          
+            <Pressable
+              disabled={!isSending}
+              onPress={stopProcess}
+              style={[styles.button, { backgroundColor: isSending ? '#d32f2f' : '#757575' }]}
+            >
+              <Text style={styles.btnText}> DETENER RUTA </Text>
+            </Pressable>
+            
+            <Text style={{ marginTop: 20 }}> 
+                { isSending ? '🟢 Servicio activo (Segundo plano)' : '🔴 Servicio detenido' } 
+            </Text>
         </View>
     </View>
   )
 }
 
-
 const styles = StyleSheet.create({
-
-  container: {
-    flex: 1,
-  },
-
-  body: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  button: {
-    padding: 15,
-    borderRadius: 30,
-    marginBottom: 10,
-  }
-
-})
+  container: { flex: 1, backgroundColor: '#FFF' },
+  body: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  button: { padding: 18, borderRadius: 30, marginBottom: 15, width: '100%', alignItems: 'center', elevation: 4 },
+  btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
+});
