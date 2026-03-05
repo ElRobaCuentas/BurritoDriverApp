@@ -1,24 +1,13 @@
-import { useEffect, useState, useRef } from 'react';
-import {
-    Alert,
-    Linking,
-    Platform,
-    PermissionsAndroid,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
-    ActivityIndicator,
-} from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { AppState, Alert, Platform, PermissionsAndroid, Pressable, StyleSheet, Text, View } from 'react-native';
 import { MyCustomHeader } from '../components/header/MyCustomHeader';
 import { updateBurritoLocation, stopBurritoService } from '../services/firebase_service';
 import BackgroundJob from 'react-native-background-actions';
 import Geolocation, { GeolocationResponse } from '@react-native-community/geolocation';
 
-// ─── CONFIGURACIÓN MATEMÁTICA EXACTA (GEMINI + CLAUDE + INVESTIGACIÓN) ─────────
-const SEND_INTERVAL_MS = 3000; // 🚌 3s: Fluidez total (Investigación UNMSM)
-const GPS_TIMEOUT_MS   = 3000; // ⏱️ 3s: Límite de espera para el hardware
-const MAX_AGE_MS       = 4000; // 🛡️ 4s: Inercia para túneles y respuesta rápida
+const SEND_INTERVAL_MS = 3000; 
+const GPS_TIMEOUT_MS   = 3000; 
+const MAX_AGE_MS       = 4000; 
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -34,179 +23,165 @@ const getCurrentPositionAsync = (): Promise<GeolocationResponse> =>
 const backgroundOptions = {
     taskName: 'BurritoTracker',
     taskTitle: 'El Burrito está en ruta 🚌',
-    taskDesc: 'Transmitiendo ubicación en tiempo real...',
+    taskDesc: 'Transmitiendo ubicación...',
     taskIcon: { name: 'ic_launcher', type: 'mipmap' },
     color: '#2060cd',
     parameters: { delay: SEND_INTERVAL_MS },
-    ongoing: true, // 🔥 Notificación fijada al sistema (No deslizable)
-    linkingURI: 'burritodriver://', 
+    ongoing: true, 
 };
 
-// ─── TASK DE FONDO: EL MOTOR INMORTAL ─────────────────────────────────────────
+// ─── EL MOTOR CON TELEMETRÍA ────────────────────────────────────────────────
 const locationTask = async (taskDataArguments: any) => {
     const { delay } = taskDataArguments;
     let lastLat = 0;
     let lastLng = 0;
+    let iteration = 1;
+    let lastTime = Date.now();
+
+    console.log(`\n🚀 [SISTEMA]: INICIANDO BACKGROUND TASK...`);
 
     while (BackgroundJob.isRunning()) {
+        const now = Date.now();
+        const delta = (now - lastTime) / 1000;
+        
+        console.log(`\n=========================================`);
+        console.log(`⏱️ [RELOJ JS]: Iteración #${iteration} | Diferencia: ${delta.toFixed(3)}s`);
+        
+        lastTime = now;
+        iteration++;
+
         try {
+            console.log(`🛰️ [GPS]: Solicitando coordenadas...`);
             const position = await getCurrentPositionAsync();
             lastLat = position.coords.latitude;
             lastLng = position.coords.longitude;
+            console.log(`✅ [GPS]: ÉXITO -> lat:${lastLat.toFixed(4)}, lng:${lastLng.toFixed(4)}`);
 
+            console.log(`☁️ [FIREBASE]: Enviando a la nube...`);
             await updateBurritoLocation({
                 latitude: lastLat,
                 longitude: lastLng,
                 heading: position.coords.heading ?? 0,
                 speed: position.coords.speed ?? 0,
             });
-            console.log(`GPS OK`);
+            console.log(`✅ [FIREBASE]: ÉXITO -> Datos guardados.`);
             
         } catch (err: any) {
-            // LATIDO DE RESPALDO: Si pierde satélites (Túneles o Interiores)
+            console.log(`❌ [ERROR GPS]: Fallo ->`, err.message);
             if (lastLat !== 0) {
-                await updateBurritoLocation({
-                    latitude: lastLat,
-                    longitude: lastLng,
-                    heading: 0, 
-                    speed: 0,   
-                });
-                console.log('💓 Latido: Manteniendo el bus vivo en Firebase');
+                console.log(`💓 [LATIDO]: Rescate a Firebase...`);
+                await updateBurritoLocation({ latitude: lastLat, longitude: lastLng, heading: 0, speed: 0 });
             }
         }
         await sleep(delay);
     }
+    console.log(`🛑 [SISTEMA]: BACKGROUND TASK DETENIDA.`);
 };
 
-// ─── COMPONENTE UI: CON DEFENSAS DE BATERÍA RESTAURADAS ────────────────────────
+// ─── COMPONENTE UI UNIVERSAL ──────────────────────────────────────────────
 export const SendCoordinates = () => {
     const [isSending, setIsSending] = useState(false);
-    const [statusMsg, setStatusMsg] = useState('');
     const lockRef = useRef(false);
-    const [isUIProcessing, setIsUIProcessing] = useState(false); 
-    
-    // 🔥 RESTAURADO: Control para no spamear la alerta de batería
-    const hasShownBatteryAlert = useRef(false);
 
-    // 🔥 RESTAURADO: Alerta automática al abrir la pantalla
     useEffect(() => {
-        if (!hasShownBatteryAlert.current && Platform.OS === 'android') {
-            Alert.alert(
-                '🔋 Optimización de batería',
-                'Para que el GPS no se apague al bloquear la pantalla, selecciona "Sin restricciones" en los ajustes.',
-                [
-                    {
-                        text: 'Ir a Ajustes',
-                        onPress: () => Linking.sendIntent('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS')
-                                         .catch(() => Linking.openSettings())
-                    },
-                    { text: 'Ya lo hice', style: 'cancel' }
-                ]
-            );
-            hasShownBatteryAlert.current = true;
-        }
+        const subscription = AppState.addEventListener('change', nextAppState => {
+            console.log(`\n📱 [ESTADO APP]: -> ${nextAppState.toUpperCase()}`);
+        });
+        return () => subscription.remove();
     }, []);
 
-    const requestPermissionsForStart = async (): Promise<boolean> => {
+    // 🛡️ ESCUDO DE PERMISOS UNIVERSAL (Soporta Android 10 al 14)
+    const requestUniversalPermissions = async (): Promise<boolean> => {
         if (Platform.OS !== 'android') return true;
+
         try {
-            const base = await PermissionsAndroid.requestMultiple([
-                PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-                PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
-            ]);
-            
-            if (base[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION] !== PermissionsAndroid.RESULTS.GRANTED) {
+            // 1. Permiso de Notificaciones (Obligatorio en Android 13 / API 33+)
+            if (Platform.Version >= 33) {
+                const notifGranted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+                if (notifGranted !== PermissionsAndroid.RESULTS.GRANTED) {
+                    Alert.alert('Aviso', 'Sin permiso de notificaciones, Android matará la app en segundo plano.');
+                    return false;
+                }
+            }
+
+            // 2. Permiso de GPS Frontal
+            const gpsGranted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+            if (gpsGranted !== PermissionsAndroid.RESULTS.GRANTED) {
                 Alert.alert('Error', 'Necesitas conceder permisos de ubicación.');
                 return false;
             }
 
+            // 3. Permiso de GPS en Segundo Plano (Recomendado en Android 10 / API 29+)
             if (Platform.Version >= 29) {
                 const bgGranted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION);
                 if (bgGranted !== PermissionsAndroid.RESULTS.GRANTED) {
-                    Alert.alert('Aviso', 'El GPS podría fallar con la pantalla apagada si no das permiso "Todo el tiempo".');
+                    Alert.alert('Advertencia', 'Sin permiso "Todo el tiempo", el GPS podría congelarse al apagar la pantalla.');
                 }
             }
+
             return true;
-        } catch (err) { return false; }
+        } catch (err) {
+            console.log("❌ Error pidiendo permisos:", err);
+            return false;
+        }
     };
 
     const startProcess = async () => {
         if (lockRef.current || BackgroundJob.isRunning()) return; 
         lockRef.current = true;
-        setIsUIProcessing(true);
-        setStatusMsg('Verificando satélites...');
-
-        if (!(await requestPermissionsForStart())) {
+        
+        console.log(`\n▶️ [UI]: Validando permisos...`);
+        const hasPermissions = await requestUniversalPermissions();
+        
+        if (!hasPermissions) {
+            console.log(`❌ [UI ERROR]: Permisos denegados. Abortando misión.`);
             lockRef.current = false;
-            setIsUIProcessing(false);
-            setStatusMsg('');
             return;
         }
 
+        console.log(`▶️ [UI]: Permisos OK. Arrancando motor...`);
         try {
             await BackgroundJob.start(locationTask, backgroundOptions);
             setIsSending(true);
-            setStatusMsg('Transmitiendo en vivo 🚌');
-        } catch (e) {
-            Alert.alert('Error', 'El celular bloqueó el servicio en segundo plano.');
-            setIsSending(false);
-            setStatusMsg('');
+        } catch (e: any) {
+            console.log(`❌ [UI ERROR CRÍTICO]:`, e.message);
+            Alert.alert('Error', 'El celular bloqueó el servicio.');
         } finally {
             lockRef.current = false;
-            setIsUIProcessing(false);
         }
     };
 
     const stopProcess = async () => {
         if (lockRef.current || !BackgroundJob.isRunning()) return; 
         lockRef.current = true;
-        setIsUIProcessing(true);
-        setStatusMsg('Deteniendo transmisión...');
+        
+        console.log(`\n⏹️ [UI]: Deteniendo...`);
         try {
             await Promise.allSettled([BackgroundJob.stop(), stopBurritoService()]);
             setIsSending(false);
-            setStatusMsg('');
         } finally {
             lockRef.current = false;
-            setIsUIProcessing(false);
         }
     };
 
     return (
         <View style={styles.container}>
-            <MyCustomHeader title=" BURRITO DRIVER " />
+            <MyCustomHeader title=" DEBUG DRIVER " />
             <View style={styles.body}>
-                <View style={styles.statusBadge}>
-                    <View style={[styles.dot, { backgroundColor: isSending ? '#4caf50' : '#f44336' }]} />
-                    <Text style={styles.statusText}>
-                        {isUIProcessing ? statusMsg : (isSending ? 'SISTEMA ACTIVO' : 'SISTEMA APAGADO')}
-                    </Text>
-                    {isUIProcessing && <ActivityIndicator size="small" color="#2060cd" style={{marginLeft: 10}}/>}
-                </View>
-
-                <Pressable disabled={isSending || isUIProcessing} onPress={startProcess} style={[styles.button, { backgroundColor: (isSending || isUIProcessing) ? '#ccc' : '#2060cd' }]}>
-                    <Text style={styles.btnText}>🚀 INICIAR RUTA</Text>
+                <Pressable onPress={startProcess} style={[styles.button, { backgroundColor: isSending ? '#4caf50' : '#2060cd' }]}>
+                    <Text style={styles.btnText}>{isSending ? '🚌 TRANSMITIENDO...' : '🚀 INICIAR DEBUG'}</Text>
                 </Pressable>
-
-                <Pressable disabled={!isSending || isUIProcessing} onPress={stopProcess} style={[styles.button, { backgroundColor: (!isSending || isUIProcessing) ? '#ccc' : '#d32f2f' }]}>
-                    <Text style={styles.btnText}>⏹ DETENER RUTA</Text>
+                <Pressable disabled={!isSending} onPress={stopProcess} style={[styles.button, { backgroundColor: !isSending ? '#555' : '#d32f2f' }]}>
+                    <Text style={styles.btnText}>⏹ DETENER DEBUG</Text>
                 </Pressable>
-
-                <Text style={styles.hint}>
-                    💡 Puedes apagar la pantalla. La ruta seguirá transmitiéndose.
-                </Text>
             </View>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#FFF' },
+    container: { flex: 1, backgroundColor: 'black' },
     body: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-    statusBadge: { flexDirection: 'row', alignItems: 'center', marginBottom: 30, backgroundColor: '#f5f5f5', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
-    dot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-    statusText: { fontSize: 13, fontWeight: 'bold', color: '#333' },
-    button: { padding: 18, borderRadius: 30, marginBottom: 15, width: '100%', alignItems: 'center', elevation: 2 },
+    button: { padding: 18, borderRadius: 30, marginBottom: 15, width: '100%', alignItems: 'center' },
     btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-    hint: { marginTop: 24, fontSize: 12, color: '#888', textAlign: 'center', paddingHorizontal: 20 },
 });
