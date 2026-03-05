@@ -22,7 +22,7 @@ const getCurrentPositionAsync = (): Promise<GeolocationResponse> =>
 
 const backgroundOptions = {
     taskName: 'BurritoTracker',
-    taskTitle: 'El Burrito está en ruta 🚌',
+    taskTitle: 'El Burrito está en ruta',
     taskDesc: 'Transmitiendo ubicación...',
     taskIcon: { name: 'ic_launcher', type: 'mipmap' },
     color: '#2060cd',
@@ -30,7 +30,6 @@ const backgroundOptions = {
     ongoing: true, 
 };
 
-// ─── EL MOTOR CON TELEMETRÍA ────────────────────────────────────────────────
 const locationTask = async (taskDataArguments: any) => {
     const { delay } = taskDataArguments;
     let lastLat = 0;
@@ -45,57 +44,55 @@ const locationTask = async (taskDataArguments: any) => {
         const delta = (now - lastTime) / 1000;
         
         console.log(`\n=========================================`);
-        console.log(`⏱️ [RELOJ JS]: Iteración #${iteration} | Diferencia: ${delta.toFixed(3)}s`);
+        console.log(`[RELOJ JS]: Iteración #${iteration} | Diferencia: ${delta.toFixed(3)}s`);
         
         lastTime = now;
         iteration++;
 
         try {
-            console.log(`🛰️ [GPS]: Solicitando coordenadas...`);
+            console.log(`[GPS]: Solicitando coordenadas...`);
             const position = await getCurrentPositionAsync();
             lastLat = position.coords.latitude;
             lastLng = position.coords.longitude;
-            console.log(`✅ [GPS]: ÉXITO -> lat:${lastLat.toFixed(4)}, lng:${lastLng.toFixed(4)}`);
+            console.log(`ÉXITO -> lat:${lastLat.toFixed(4)}, lng:${lastLng.toFixed(4)}`);
 
-            console.log(`☁️ [FIREBASE]: Enviando a la nube...`);
+            console.log(`[FIREBASE]: Enviando a la nube...`);
             await updateBurritoLocation({
                 latitude: lastLat,
                 longitude: lastLng,
                 heading: position.coords.heading ?? 0,
                 speed: position.coords.speed ?? 0,
             });
-            console.log(`✅ [FIREBASE]: ÉXITO -> Datos guardados.`);
+            console.log(`[FIREBASE]: ÉXITO -> Datos guardados.`);
             
         } catch (err: any) {
-            console.log(`❌ [ERROR GPS]: Fallo ->`, err.message);
+            console.log(`[ERROR GPS]: Fallo ->`, err.message);
             if (lastLat !== 0) {
-                console.log(`💓 [LATIDO]: Rescate a Firebase...`);
+                console.log(`[LATIDO]: Rescate a Firebase...`);
                 await updateBurritoLocation({ latitude: lastLat, longitude: lastLng, heading: 0, speed: 0 });
             }
         }
         await sleep(delay);
     }
-    console.log(`🛑 [SISTEMA]: BACKGROUND TASK DETENIDA.`);
+    console.log(`[SISTEMA]: BACKGROUND TASK DETENIDA.`);
 };
 
-// ─── COMPONENTE UI UNIVERSAL ──────────────────────────────────────────────
 export const SendCoordinates = () => {
     const [isSending, setIsSending] = useState(false);
     const lockRef = useRef(false);
 
     useEffect(() => {
         const subscription = AppState.addEventListener('change', nextAppState => {
-            console.log(`\n📱 [ESTADO APP]: -> ${nextAppState.toUpperCase()}`);
+            console.log(`\n [ESTADO APP]: -> ${nextAppState.toUpperCase()}`);
         });
         return () => subscription.remove();
     }, []);
 
-    // 🛡️ ESCUDO DE PERMISOS UNIVERSAL (Soporta Android 10 al 14)
     const requestUniversalPermissions = async (): Promise<boolean> => {
         if (Platform.OS !== 'android') return true;
 
         try {
-            // 1. Permiso de Notificaciones (Obligatorio en Android 13 / API 33+)
+            // 1. Permiso de Notificaciones 
             if (Platform.Version >= 33) {
                 const notifGranted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
                 if (notifGranted !== PermissionsAndroid.RESULTS.GRANTED) {
@@ -111,7 +108,7 @@ export const SendCoordinates = () => {
                 return false;
             }
 
-            // 3. Permiso de GPS en Segundo Plano (Recomendado en Android 10 / API 29+)
+            // 3. Permiso de GPS en Segundo Plano 
             if (Platform.Version >= 29) {
                 const bgGranted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION);
                 if (bgGranted !== PermissionsAndroid.RESULTS.GRANTED) {
@@ -121,7 +118,7 @@ export const SendCoordinates = () => {
 
             return true;
         } catch (err) {
-            console.log("❌ Error pidiendo permisos:", err);
+            console.log("Error pidiendo permisos:", err);
             return false;
         }
     };
@@ -130,21 +127,21 @@ export const SendCoordinates = () => {
         if (lockRef.current || BackgroundJob.isRunning()) return; 
         lockRef.current = true;
         
-        console.log(`\n▶️ [UI]: Validando permisos...`);
+        console.log(`\n [UI]: Validando permisos...`);
         const hasPermissions = await requestUniversalPermissions();
         
         if (!hasPermissions) {
-            console.log(`❌ [UI ERROR]: Permisos denegados. Abortando misión.`);
+            console.log(`[UI ERROR]: Permisos denegados. Abortando misión.`);
             lockRef.current = false;
             return;
         }
 
-        console.log(`▶️ [UI]: Permisos OK. Arrancando motor...`);
+        console.log(`[UI]: Permisos OK. Arrancando motor...`);
         try {
             await BackgroundJob.start(locationTask, backgroundOptions);
             setIsSending(true);
         } catch (e: any) {
-            console.log(`❌ [UI ERROR CRÍTICO]:`, e.message);
+            console.log(`[UI ERROR CRÍTICO]:`, e.message);
             Alert.alert('Error', 'El celular bloqueó el servicio.');
         } finally {
             lockRef.current = false;
@@ -155,7 +152,7 @@ export const SendCoordinates = () => {
         if (lockRef.current || !BackgroundJob.isRunning()) return; 
         lockRef.current = true;
         
-        console.log(`\n⏹️ [UI]: Deteniendo...`);
+        console.log(`\n⏹[UI]: Deteniendo...`);
         try {
             await Promise.allSettled([BackgroundJob.stop(), stopBurritoService()]);
             setIsSending(false);
