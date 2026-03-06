@@ -1,24 +1,68 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { AppState, Alert, Platform, PermissionsAndroid, Pressable, StyleSheet, Text, View } from 'react-native';
+import { 
+    AppState, Alert, Platform, PermissionsAndroid, 
+    Pressable, StyleSheet, Text, View, ScrollView,
+    DeviceEventEmitter 
+} from 'react-native';
 import { MyCustomHeader } from '../components/header/MyCustomHeader';
 import { updateBurritoLocation, stopBurritoService } from '../services/firebase_service';
 import BackgroundJob from 'react-native-background-actions';
 import Geolocation, { GeolocationResponse } from '@react-native-community/geolocation';
 
-const SEND_INTERVAL_MS = 3000; 
-const GPS_TIMEOUT_MS   = 3000; 
-const MAX_AGE_MS       = 4000; 
+const SEND_INTERVAL_MS = 3000;
+const GPS_TIMEOUT_MS   = 3000;
+const MAX_AGE_MS       = 4000;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const sendLog = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
+    const timestamp = new Date().toLocaleTimeString();
+    DeviceEventEmitter.emit('PRO_DEBUG_LOG', {
+        id: Math.random(),
+        t: `[${timestamp}] ${text}`,
+        type
+    });
+};
 
 const getCurrentPositionAsync = (): Promise<GeolocationResponse> =>
     new Promise((resolve, reject) =>
         Geolocation.getCurrentPosition(resolve, reject, {
             enableHighAccuracy: true,
-            timeout: GPS_TIMEOUT_MS, 
-            maximumAge: MAX_AGE_MS, 
+            timeout: GPS_TIMEOUT_MS,
+            maximumAge: MAX_AGE_MS,
         })
     );
+
+const locationTask = async (taskDataArguments: any) => {
+    const { delay } = taskDataArguments;
+    let iteration = 1;
+    
+    sendLog("🚀 MOTOR: ¡VIVO Y CORRIENDO!", "success");
+
+    while (BackgroundJob.isRunning()) {
+        sendLog(`⏱️ Iteración #${iteration}`);
+        iteration++;
+        try {
+            sendLog("🛰️ Consultando sensor GPS...");
+            const position = await getCurrentPositionAsync();
+            const { latitude, longitude } = position.coords;
+            sendLog(`✅ POSICIÓN: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, "success");
+
+            sendLog("☁️ Subiendo a Firebase...");
+            await updateBurritoLocation({
+                latitude,
+                longitude,
+                heading: position.coords.heading ?? 0,
+                speed: position.coords.speed ?? 0,
+            });
+            sendLog("✅ FIREBASE ACTUALIZADO", "success");
+        } catch (err: any) {
+            sendLog(`❌ FALLO GPS: ${err.message}`, "error");
+        }
+        await sleep(delay);
+    }
+    sendLog("🛑 MOTOR APAGADO", "error");
+};
 
 const backgroundOptions = {
     taskName: 'BurritoTracker',
@@ -27,149 +71,92 @@ const backgroundOptions = {
     taskIcon: { name: 'ic_launcher', type: 'mipmap' },
     color: '#2060cd',
     parameters: { delay: SEND_INTERVAL_MS },
-    ongoing: true, 
-};
-
-const locationTask = async (taskDataArguments: any) => {
-    const { delay } = taskDataArguments;
-    let lastLat = 0;
-    let lastLng = 0;
-    let iteration = 1;
-    let lastTime = Date.now();
-
-    console.log(`\n🚀 [SISTEMA]: INICIANDO BACKGROUND TASK...`);
-
-    while (BackgroundJob.isRunning()) {
-        const now = Date.now();
-        const delta = (now - lastTime) / 1000;
-        
-        console.log(`\n=========================================`);
-        console.log(`[RELOJ JS]: Iteración #${iteration} | Diferencia: ${delta.toFixed(3)}s`);
-        
-        lastTime = now;
-        iteration++;
-
-        try {
-            console.log(`[GPS]: Solicitando coordenadas...`);
-            const position = await getCurrentPositionAsync();
-            lastLat = position.coords.latitude;
-            lastLng = position.coords.longitude;
-            console.log(`ÉXITO -> lat:${lastLat.toFixed(4)}, lng:${lastLng.toFixed(4)}`);
-
-            console.log(`[FIREBASE]: Enviando a la nube...`);
-            await updateBurritoLocation({
-                latitude: lastLat,
-                longitude: lastLng,
-                heading: position.coords.heading ?? 0,
-                speed: position.coords.speed ?? 0,
-            });
-            console.log(`[FIREBASE]: ÉXITO -> Datos guardados.`);
-            
-        } catch (err: any) {
-            console.log(`[ERROR GPS]: Fallo ->`, err.message);
-            if (lastLat !== 0) {
-                console.log(`[LATIDO]: Rescate a Firebase...`);
-                await updateBurritoLocation({ latitude: lastLat, longitude: lastLng, heading: 0, speed: 0 });
-            }
-        }
-        await sleep(delay);
-    }
-    console.log(`[SISTEMA]: BACKGROUND TASK DETENIDA.`);
+    ongoing: true,
 };
 
 export const SendCoordinates = () => {
     const [isSending, setIsSending] = useState(false);
-    const lockRef = useRef(false);
+    const [logs, setLogs] = useState<any[]>([]);
+    const scrollRef = useRef<ScrollView>(null);
 
     useEffect(() => {
-        const subscription = AppState.addEventListener('change', nextAppState => {
-            console.log(`\n [ESTADO APP]: -> ${nextAppState.toUpperCase()}`);
+        const logSubscription = DeviceEventEmitter.addListener('PRO_DEBUG_LOG', (newLog) => {
+            setLogs(prev => [...prev, newLog].slice(-30)); 
         });
-        return () => subscription.remove();
+
+        const appStateSub = AppState.addEventListener('change', (state) => {
+            sendLog(`📱 APP STATE: ${state.toUpperCase()}`);
+        });
+
+        return () => {
+            logSubscription.remove();
+            appStateSub.remove();
+        };
     }, []);
 
-    const requestUniversalPermissions = async (): Promise<boolean> => {
-        if (Platform.OS !== 'android') return true;
-
-        try {
-            // 1. Permiso de Notificaciones 
-            if (Platform.Version >= 33) {
-                const notifGranted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
-                if (notifGranted !== PermissionsAndroid.RESULTS.GRANTED) {
-                    Alert.alert('Aviso', 'Sin permiso de notificaciones, Android matará la app en segundo plano.');
-                    return false;
-                }
-            }
-
-            // 2. Permiso de GPS Frontal
-            const gpsGranted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
-            if (gpsGranted !== PermissionsAndroid.RESULTS.GRANTED) {
-                Alert.alert('Error', 'Necesitas conceder permisos de ubicación.');
-                return false;
-            }
-
-            // 3. Permiso de GPS en Segundo Plano 
-            if (Platform.Version >= 29) {
-                const bgGranted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION);
-                if (bgGranted !== PermissionsAndroid.RESULTS.GRANTED) {
-                    Alert.alert('Advertencia', 'Sin permiso "Todo el tiempo", el GPS podría congelarse al apagar la pantalla.');
-                }
-            }
-
-            return true;
-        } catch (err) {
-            console.log("Error pidiendo permisos:", err);
-            return false;
-        }
-    };
-
     const startProcess = async () => {
-        if (lockRef.current || BackgroundJob.isRunning()) return; 
-        lockRef.current = true;
+        if (BackgroundJob.isRunning()) return;
         
-        console.log(`\n [UI]: Validando permisos...`);
-        const hasPermissions = await requestUniversalPermissions();
-        
-        if (!hasPermissions) {
-            console.log(`[UI ERROR]: Permisos denegados. Abortando misión.`);
-            lockRef.current = false;
-            return;
-        }
+        setLogs([]); 
+        sendLog("▶️ Botón presionado: Iniciando...", "info");
 
-        console.log(`[UI]: Permisos OK. Arrancando motor...`);
         try {
+            sendLog("🛡️ Verificando permisos...");
+            const granted = await PermissionsAndroid.request(
+                PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+            );
+
+            if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+                sendLog("❌ PERMISO DENEGADO", "error");
+                return;
+            }
+
+            sendLog("⚙️ Arrancando Background Service...");
             await BackgroundJob.start(locationTask, backgroundOptions);
             setIsSending(true);
+            sendLog("✅ TODO OK: Revisa la terminal", "success");
         } catch (e: any) {
-            console.log(`[UI ERROR CRÍTICO]:`, e.message);
-            Alert.alert('Error', 'El celular bloqueó el servicio.');
-        } finally {
-            lockRef.current = false;
+            sendLog(`❌ CRASH UI: ${e.message}`, "error");
         }
     };
 
     const stopProcess = async () => {
-        if (lockRef.current || !BackgroundJob.isRunning()) return; 
-        lockRef.current = true;
-        
-        console.log(`\n⏹[UI]: Deteniendo...`);
-        try {
-            await Promise.allSettled([BackgroundJob.stop(), stopBurritoService()]);
-            setIsSending(false);
-        } finally {
-            lockRef.current = false;
-        }
+        sendLog("⏹️ Deteniendo proceso...");
+        await BackgroundJob.stop();
+        await stopBurritoService();
+        setIsSending(false);
     };
 
     return (
         <View style={styles.container}>
-            <MyCustomHeader title=" DEBUG DRIVER " />
-            <View style={styles.body}>
-                <Pressable onPress={startProcess} style={[styles.button, { backgroundColor: isSending ? '#4caf50' : '#2060cd' }]}>
+            <Text style={styles.mainTitle}>🔥 PANTALLA DE DEBUG 🔥</Text>
+            
+            <View style={styles.console}>
+                <Text style={styles.consoleTitle}> TERMINAL DE EVENTOS </Text>
+                <ScrollView 
+                    ref={scrollRef}
+                    onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+                    style={styles.scroll}
+                >
+                    {logs.map(log => (
+                        <Text key={log.id} style={[
+                            styles.logLine, 
+                            log.type === 'error' ? {color: '#cc0000'} : 
+                            log.type === 'success' ? {color: '#008800'} : {color: '#000000'}
+                        ]}>
+                            {log.t}
+                        </Text>
+                    ))}
+                </ScrollView>
+            </View>
+
+            <View style={styles.buttons}>
+                <Pressable onPress={startProcess} style={[styles.btn, {backgroundColor: isSending ? '#888' : '#2060cd'}]}>
                     <Text style={styles.btnText}>{isSending ? '🚌 TRANSMITIENDO...' : '🚀 INICIAR DEBUG'}</Text>
                 </Pressable>
-                <Pressable disabled={!isSending} onPress={stopProcess} style={[styles.button, { backgroundColor: !isSending ? '#555' : '#d32f2f' }]}>
-                    <Text style={styles.btnText}>⏹ DETENER DEBUG</Text>
+                
+                <Pressable onPress={stopProcess} style={[styles.btn, {backgroundColor: '#d32f2f'}]}>
+                    <Text style={styles.btnText}>⏹ DETENER TODO</Text>
                 </Pressable>
             </View>
         </View>
@@ -177,8 +164,21 @@ export const SendCoordinates = () => {
 };
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: 'black' },
-    body: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-    button: { padding: 18, borderRadius: 30, marginBottom: 15, width: '100%', alignItems: 'center' },
-    btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+    container: { flex: 1, backgroundColor: '#FFFFFF' }, // FONDO BLANCO
+    mainTitle: { fontSize: 20, fontWeight: 'bold', color: '#000', textAlign: 'center', marginTop: 20 },
+    console: { 
+        flex: 1, 
+        backgroundColor: '#F5F5F5', 
+        margin: 15, 
+        padding: 10, 
+        borderWidth: 4, 
+        borderColor: '#FF0000', // BORDE ROJO GIGANTE
+        borderRadius: 5,
+    },
+    consoleTitle: { color: '#000', fontSize: 14, fontWeight: 'bold', marginBottom: 5, borderBottomWidth: 1, borderBottomColor: '#CCC' },
+    scroll: { flex: 1 },
+    logLine: { fontFamily: 'monospace', fontSize: 12, marginBottom: 4 },
+    buttons: { padding: 20 },
+    btn: { padding: 20, borderRadius: 10, marginBottom: 10, alignItems: 'center', elevation: 5 },
+    btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
 });
