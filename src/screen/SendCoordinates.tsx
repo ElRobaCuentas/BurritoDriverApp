@@ -1,18 +1,18 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { 
-    AppState, Alert, Platform, PermissionsAndroid, 
+    AppState, PermissionsAndroid, 
     Pressable, StyleSheet, Text, View, ScrollView,
     DeviceEventEmitter 
 } from 'react-native';
-import { MyCustomHeader } from '../components/header/MyCustomHeader';
 import { updateBurritoLocation, stopBurritoService } from '../services/firebase_service';
 import BackgroundJob from 'react-native-background-actions';
 import Geolocation, { GeolocationResponse } from '@react-native-community/geolocation';
 
 const SEND_INTERVAL_MS = 3000;
-const GPS_TIMEOUT_MS   = 3000;
+const GPS_TIMEOUT_MS   = 10000;
 const MAX_AGE_MS       = 4000;
 
+//ESTA FUNCION NO VA EJECUTAR NADA EN EL TIMEOUT SOLO EL "resolve vacio" PARA CUANDO SE EJECUTA LE DIGA AL AWAIT Q CONTINUE (este es una artificio)
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const sendLog = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
@@ -28,13 +28,13 @@ const getCurrentPositionAsync = (): Promise<GeolocationResponse> =>
     new Promise((resolve, reject) =>
         Geolocation.getCurrentPosition(resolve, reject, {
             enableHighAccuracy: true,
-            timeout: GPS_TIMEOUT_MS,
-            maximumAge: MAX_AGE_MS,
+            timeout: GPS_TIMEOUT_MS, //Si en ese tiempo no hay respuesta se cancela la peticion
+            maximumAge: MAX_AGE_MS, //Para no aceptar localizacion de cache de mas de 4 segundos
         })
     );
 
 const locationTask = async (taskDataArguments: any) => {
-    const { delay } = taskDataArguments;
+    const { delay } = taskDataArguments; //Es el tiempo de espera q definimos para la proxima solicitud de ubicacion
     let iteration = 1;
     
     sendLog("🚀 MOTOR: ¡VIVO Y CORRIENDO!", "success");
@@ -42,24 +42,36 @@ const locationTask = async (taskDataArguments: any) => {
     while (BackgroundJob.isRunning()) {
         sendLog(`⏱️ Iteración #${iteration}`);
         iteration++;
+        let position; // Declaramos la variable afuera para usarla en el segundo bloque
+
+        // --- BLOQUE 1: INTENTAR OBTENER GPS ---
         try {
             sendLog("🛰️ Consultando sensor GPS...");
-            const position = await getCurrentPositionAsync();
+            position = await getCurrentPositionAsync();
             const { latitude, longitude } = position.coords;
             sendLog(`✅ POSICIÓN: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, "success");
+        } catch (err: any) {
+            sendLog(`❌ FALLO GPS - X: ${err.message}`, "error");
+            await sleep(delay);
+            continue; //Para abortar esta iteracion y pasar al siguiente
+        }
 
+        // --- BLOQUE 2: INTENTAR SUBIR A FIREBASE ---
+        try {
             sendLog("☁️ Subiendo a Firebase...");
             await updateBurritoLocation({
-                latitude,
-                longitude,
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
                 heading: position.coords.heading ?? 0,
                 speed: position.coords.speed ?? 0,
             });
-            sendLog("✅ FIREBASE ACTUALIZADO", "success");
+            sendLog("✅ FIREBASE ACTUALIZADO - X", "success");
         } catch (err: any) {
-            sendLog(`❌ FALLO GPS: ${err.message}`, "error");
+            // Si llegamos aquí, sabemos 100% que el GPS funcionó, pero el internet/Firebase falló
+            sendLog(`❌ FALLO FIREBASE: ${err.message}`, "error");
         }
-        await sleep(delay);
+
+        await sleep(delay); //AQUI ESPERAMOS EL TIEMPO DEL DELAY PARA PASAR A LA SIGUIENTE LINEA O INTERACION
     }
     sendLog("🛑 MOTOR APAGADO", "error");
 };
@@ -80,16 +92,19 @@ export const SendCoordinates = () => {
     const scrollRef = useRef<ScrollView>(null);
 
     useEffect(() => {
+        //Creamos un evento listener: para escuchar y setear los logs enviados acumulandose en un estate
         const logSubscription = DeviceEventEmitter.addListener('PRO_DEBUG_LOG', (newLog) => {
             setLogs(prev => [...prev, newLog].slice(-30)); 
         });
 
+        //Eventos que escucha la APP si esta en primer o segundo plano (active o background)
         const appStateSub = AppState.addEventListener('change', (state) => {
             sendLog(`📱 APP STATE: ${state.toUpperCase()}`);
         });
 
         return () => {
-            logSubscription.remove();
+            //Destruimos los eventos cuando salimos del componente
+            logSubscription.remove(); 
             appStateSub.remove();
         };
     }, []);
