@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
-    AppState, PermissionsAndroid,
+    AppState, PermissionsAndroid, Platform,
     Pressable, StyleSheet, Text, View, ScrollView,
     DeviceEventEmitter, Alert, Linking
 } from 'react-native';
@@ -85,43 +85,76 @@ const backgroundOptions = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ARQUITECTURA (Claude): Función separada → startProcess queda limpio y legible
-// UX (Gemini): Alert con botón "Abrir Ajustes" en lugar de solo un log en rojo
+// SE PIDEN 3 PERMISOS EN ORDEN ESTRICTO:
 //
-// PROBLEMA QUE RESUELVE:
-// Android 13/14 separa ACCESS_FINE_LOCATION y ACCESS_BACKGROUND_LOCATION en
-// dos permisos distintos que DEBEN pedirse en dos pasos y en ese orden.
-// Tenerlos declarados en el Manifest no es suficiente: si no se piden en
-// runtime, Android bloquea el GPS en cuanto la app sale del primer plano.
-// Resultado anterior: el tracker se congelaba al apagar la pantalla.
+// PERMISO 0 — POST_NOTIFICATIONS (Android 13+)
+//   ERA EL PROBLEMA RAÍZ. Estaba en el Manifest pero nunca se pedía en runtime.
+//   Sin este permiso, Android bloquea la notificación persistente silenciosamente.
+//   Sin notificación = el Foreground Service nunca se ancla al sistema.
+//   Sin Foreground Service real = Android mata el proceso al ir al fondo.
+//   Resultado: 2 peticiones más y para. Exactamente lo que veíamos.
+//
+// PERMISO 1 — ACCESS_FINE_LOCATION
+//   La ventanita normal de GPS. Debe pedirse antes que el de segundo plano.
+//
+// PERMISO 2 — ACCESS_BACKGROUND_LOCATION
+//   Android 13/14/15 exige pedirlo en un paso separado DESPUÉS del primero.
+//   El usuario debe elegir "Permitir siempre" o el GPS se para con pantalla apagada.
 // ─────────────────────────────────────────────────────────────────────────────
 const requestAllPermissions = async (): Promise<boolean> => {
 
-    // PASO 1: Ubicación precisa — la ventanita normal de Android
-    sendLog("🛡️ Paso 1/2: Pidiendo ubicación precisa...");
+    // ── PERMISO 0: NOTIFICACIONES (el que faltaba) ──────────────────────────
+    // Solo necesario en Android 13 (API 33) en adelante.
+    // En Android 12 o menos, las notificaciones se conceden automáticamente.
+    if (Platform.OS === 'android' && Platform.Version >= 33) {
+        sendLog("🛡️ Paso 1/3: Pidiendo permiso de notificaciones...");
+        const notifGranted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+        );
+
+        if (notifGranted !== PermissionsAndroid.RESULTS.GRANTED) {
+            sendLog("❌ NOTIFICACIONES DENEGADAS — El Foreground Service no puede anclarse", "error");
+            Alert.alert(
+                "Permiso crítico denegado",
+                "Sin permiso de notificaciones, el rastreo se detiene en segundo plano. Ve a Ajustes → Apps → BurritoDriver → Notificaciones y actívalas.",
+                [
+                    { text: "Cancelar", style: "cancel" },
+                    { text: "Abrir Ajustes", onPress: () => Linking.openSettings() }
+                ]
+            );
+            return false; // Sin este permiso no tiene sentido continuar
+        }
+        sendLog("✅ Paso 1/3: Notificaciones concedidas", "success");
+    } else {
+        sendLog("✅ Paso 1/3: Notificaciones — no requerido en esta versión de Android", "success");
+    }
+
+    // ── PERMISO 1: UBICACIÓN PRECISA ─────────────────────────────────────────
+    sendLog("🛡️ Paso 2/3: Pidiendo ubicación precisa...");
     const fineGranted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
     );
 
     if (fineGranted !== PermissionsAndroid.RESULTS.GRANTED) {
         sendLog("❌ PERMISO GPS DENEGADO", "error");
-        Alert.alert("Permiso Requerido", "Necesitamos acceso al GPS para rastrear el bus.");
+        Alert.alert(
+            "Permiso Requerido",
+            "Necesitamos acceso al GPS para rastrear el bus.",
+        );
         return false;
     }
+    sendLog("✅ Paso 2/3: Ubicación precisa concedida", "success");
 
-    sendLog("✅ Paso 1/2: Ubicación precisa concedida", "success");
-
-    // PASO 2: Ubicación en segundo plano — Android abre su propia pantalla
-    // El conductor DEBE elegir "Permitir siempre" (no "Solo mientras se usa la app")
-    // Si elige la opción incorrecta, el GPS se pausará al bloquear la pantalla.
-    sendLog("🛡️ Paso 2/2: Pidiendo ubicación en segundo plano...");
+    // ── PERMISO 2: UBICACIÓN EN SEGUNDO PLANO ────────────────────────────────
+    // Android abre su propia pantalla de configuración.
+    // El conductor DEBE elegir "Permitir siempre".
+    sendLog("🛡️ Paso 3/3: Pidiendo ubicación en segundo plano...");
     const bgGranted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION
     );
 
     if (bgGranted !== PermissionsAndroid.RESULTS.GRANTED) {
-        sendLog("❌ PERMISO SEGUNDO PLANO DENEGADO — El tracker no funcionará con pantalla apagada", "error");
-        // UX (Gemini): popup con botón directo a ajustes, no solo texto en consola
+        sendLog("❌ PERMISO SEGUNDO PLANO DENEGADO — GPS se pausará al apagar pantalla", "error");
         Alert.alert(
             "Paso necesario",
             "Para rastrear el bus con la pantalla apagada, ve a Ajustes → Ubicación → 'Permitir siempre'.",
@@ -130,10 +163,10 @@ const requestAllPermissions = async (): Promise<boolean> => {
                 { text: "Abrir Ajustes", onPress: () => Linking.openSettings() }
             ]
         );
-        return false; // Bloqueamos el inicio — sin este permiso el tracker no sirve en producción
+        return false;
     }
+    sendLog("✅ Paso 3/3: Segundo plano concedido — GPS activo con pantalla apagada", "success");
 
-    sendLog("✅ Paso 2/2: Segundo plano concedido — GPS activo con pantalla apagada", "success");
     return true;
 };
 
@@ -164,7 +197,6 @@ export const SendCoordinates = () => {
         sendLog("▶️ Botón presionado: Iniciando...", "info");
 
         try {
-            // La lógica de permisos vive en su propia función → este bloque queda limpio
             const permisosOk = await requestAllPermissions();
             if (!permisosOk) return;
 
@@ -172,14 +204,14 @@ export const SendCoordinates = () => {
             await BackgroundJob.start(locationTask, backgroundOptions);
             setIsSending(true);
             sendLog("✅ MOTOR ACTIVO — GPS transmitiendo cada 3 segundos", "success");
+            sendLog("🔔 Busca la notificación persistente en tu barra de estado", "info");
 
-            // UX (Gemini): advertencia de batería obligatoria para Honor/Huawei
-            // MagicOS corta el acceso a internet en segundo plano aunque el permiso
-            // de ubicación esté concedido. Sin desactivar el ahorro de batería,
-            // el tracker puede detenerse a los 10 minutos de apagar la pantalla.
+            // Advertencia de batería para Honor/Huawei
+            // MagicOS mata procesos en segundo plano aunque tengan todos los permisos.
+            // El conductor debe desactivar el ahorro de energía manualmente.
             Alert.alert(
-                "⚠️ Último paso importante",
-                "En tu celular Honor, ve a Ajustes → Batería → BurritoDriverApp y desactiva el ahorro de energía. Sin esto, el rastreo puede detenerse al apagar la pantalla.",
+                "⚠️ Último paso — Honor X7B",
+                "Ve a Ajustes → Batería → BurritoDriverApp y desactiva el ahorro de energía. Sin esto MagicOS puede cortar el rastreo al apagar la pantalla.",
                 [
                     { text: "Entendido", style: "cancel" },
                     { text: "Ir a Ajustes", onPress: () => Linking.openSettings() }
