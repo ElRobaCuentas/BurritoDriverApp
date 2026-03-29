@@ -95,6 +95,35 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:677410027288:android:7beb07f918eb52545f506d",
+        "android_client_info": {
+          "package_name": "com.sythor.burritoapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "677410027288-l5heitld12behdgnqf69rgkav0c6kbvc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCxLs5m8QV5FrdtrCygDqLTgEkR9FnRpGs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "677410027288-l5heitld12behdgnqf69rgkav0c6kbvc.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"
