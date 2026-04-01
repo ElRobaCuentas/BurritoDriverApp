@@ -10,7 +10,7 @@ import Geolocation, { GeolocationResponse } from '@react-native-community/geoloc
 
 const SEND_INTERVAL_MS = 3000;
 const GPS_TIMEOUT_MS   = 10000;
-const MAX_AGE_MS       = 4000;
+const MAX_AGE_MS       = 2500; //Antes 4000
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -63,6 +63,7 @@ const locationTask = async (taskDataArguments: any) => {
                 longitude: position.coords.longitude,
                 heading: position.coords.heading ?? 0,
                 speed: position.coords.speed ?? 0,
+                timestamp: position.timestamp, //AGREGAMOS TIMESTAMP
             });
             sendLog("✅ FIREBASE ACTUALIZADO", "success");
         } catch (err: any) {

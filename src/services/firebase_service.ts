@@ -5,6 +5,7 @@ interface LocationData {
   longitude: number;
   heading: number;
   speed: number;
+  timestamp: number;
 }
 
 const BURRITO_LOCATION_PATH = '/ubicacion_burrito';
