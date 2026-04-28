@@ -13,8 +13,7 @@ const BURRITO_LOCATION_PATH = '/ubicacion_burrito';
 export const updateBurritoLocation = async (data: LocationData) => {
   try {
     await database().ref(BURRITO_LOCATION_PATH).update({
-      ...data,
-      timestamp: database.ServerValue.TIMESTAMP,
+      ...data,  // Aquí ya viene el timestamp de Date.now()
       isActive: true,
     });
     
