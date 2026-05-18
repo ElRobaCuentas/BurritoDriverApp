@@ -138,6 +138,7 @@ export const SendCoordinates = () => {
     const [isSending, setIsSending] = useState(false);
     const [logs, setLogs] = useState<any[]>([]);
     const scrollRef = useRef<ScrollView>(null);
+    const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => {
         const logSubscription = DeviceEventEmitter.addListener('PRO_DEBUG_LOG', (newLog) => {
@@ -169,14 +170,18 @@ export const SendCoordinates = () => {
             setIsSending(true);
             sendLog("✅ MOTOR ACTIVO — GPS transmitiendo", "success");
 
-            Alert.alert(
-                "⚠️ Último paso — Honor X7B",
-                "Ve a Ajustes → Batería → BurritoDriverApp y desactiva el ahorro de energía. Sin esto MagicOS puede cortar el rastreo al apagar la pantalla.",
-                [
-                    { text: "Entendido", style: "cancel" },
-                    { text: "Ir a Ajustes", onPress: () => Linking.openSettings() }
-                ]
-            );
+            // CORRECCIÓN: Enviamos solo el timestamp. 
+            // El servicio se encarga de poner el isActive: true
+            heartbeatRef.current = setInterval(async () => {
+                try {
+                    await updateBurritoLocation({ 
+                        timestamp: Date.now() 
+                    });
+                    sendLog("💓 Latido enviado", "info");
+                } catch (e: any) {
+                    sendLog(`❌ Error Latido: ${e.message}`, "error");
+                }
+            }, 8000);
 
         } catch (e: any) {
             sendLog(`❌ CRASH UI: ${e.message}`, "error");
@@ -185,6 +190,12 @@ export const SendCoordinates = () => {
 
     const stopProcess = async () => {
         sendLog("⏹️ Deteniendo proceso...");
+        
+        if (heartbeatRef.current) {
+            clearInterval(heartbeatRef.current);
+            heartbeatRef.current = null;
+        }
+
         await BackgroundJob.stop();
         await stopBurritoService();
         setIsSending(false);
