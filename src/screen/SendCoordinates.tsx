@@ -8,8 +8,9 @@ import { updateBurritoLocation, stopBurritoService } from '../services/firebase_
 import BackgroundJob from 'react-native-background-actions';
 import Geolocation from '@react-native-community/geolocation';
 
-const GPS_TIMEOUT_MS   = 10000;
-const MAX_AGE_MS       = 2500;
+interface Props {
+    driverUid: string;
+}
 
 const sendLog = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
@@ -20,8 +21,10 @@ const sendLog = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
     });
 };
 
+// ACUERDO: Recibe los parámetros del Job de manera segura
 const locationTask = async (taskDataArguments: any) => {
-    sendLog("🚀 MOTOR: ¡VIVO Y CORRIENDO!", "success");
+    const { uidChofer } = taskDataArguments; // <--- AQUÍ RECUPERAMOS EL UID EN SEGUNDO PLANO
+    sendLog(`🚀 MOTOR: ¡VIVO CON CHOFER ${uidChofer.substring(0,6)}...!`, "success");
 
     return new Promise<void>((resolve) => {
         const watchId = Geolocation.watchPosition(
@@ -31,12 +34,13 @@ const locationTask = async (taskDataArguments: any) => {
 
                 try {
                     sendLog("☁️ Subiendo a Firebase...");
+                    // En T11 mutaremos esta llamada para incluir el busId resuelto
                     await updateBurritoLocation({
                         latitude,
                         longitude,
                         heading: heading ?? 0,
                         speed: speed ?? 0,
-                        timestamp: Date.now(), // ACUERDO: El reloj local de tu celular
+                        timestamp: Date.now(),
                     });
                     sendLog("✅ FIREBASE ACTUALIZADO", "success");
                 } catch (err: any) {
@@ -48,13 +52,12 @@ const locationTask = async (taskDataArguments: any) => {
             },
             {
                 enableHighAccuracy: true,
-                distanceFilter: 2, // Ignora el temblor estático menor a 2 metros
-                interval: 3000,    // Android pide actualización cada 3 segundos
-                fastestInterval: 2000, // Pero acepta si llega en 2 segundos
+                distanceFilter: 2, 
+                interval: 3000,    
+                fastestInterval: 2000, 
             }
         );
 
-        // Mantenemos la tarea viva mientras BackgroundJob esté corriendo
         const keepAlive = setInterval(() => {
             if (!BackgroundJob.isRunning()) {
                 Geolocation.clearWatch(watchId);
@@ -66,15 +69,16 @@ const locationTask = async (taskDataArguments: any) => {
     });
 };
 
-const backgroundOptions = {
+// Convertimos backgroundOptions en una función o lo armamos dinámicamente al iniciar
+const getBackgroundOptions = (uid: string) => ({
     taskName: 'BurritoTracker',
     taskTitle: 'El Burrito está en ruta',
     taskDesc: 'Transmitiendo ubicación...',
     taskIcon: { name: 'ic_launcher', type: 'mipmap' },
     color: '#2060cd',
-    parameters: { delay: 3000 },
+    parameters: { uidChofer: uid }, // <--- INYECTAMOS LA DATA AL HILO DEL BACKGROUND TASK
     ongoing: true,
-};
+});
 
 const requestAllPermissions = async (): Promise<boolean> => {
     if (Platform.OS === 'android' && Platform.Version >= 33) {
@@ -87,7 +91,7 @@ const requestAllPermissions = async (): Promise<boolean> => {
             sendLog("❌ NOTIFICACIONES DENEGADAS", "error");
             Alert.alert(
                 "Permiso crítico denegado",
-                "Sin permiso de notificaciones, el rastreo se detiene en segundo plano. Ve a Ajustes → Apps → BurritoDriver → Notificaciones y actívalas.",
+                "Sin permiso de notificaciones, el rastreo se detiene en segundo plano.",
                 [
                     { text: "Cancelar", style: "cancel" },
                     { text: "Abrir Ajustes", onPress: () => Linking.openSettings() }
@@ -134,7 +138,7 @@ const requestAllPermissions = async (): Promise<boolean> => {
     return true;
 };
 
-export const SendCoordinates = () => {
+export const SendCoordinates = ({ driverUid }: Props) => {
     const [isSending, setIsSending] = useState(false);
     const [logs, setLogs] = useState<any[]>([]);
     const scrollRef = useRef<ScrollView>(null);
@@ -165,13 +169,16 @@ export const SendCoordinates = () => {
             if (!permisosOk) return;
 
             sendLog("⚙️ Arrancando Background Service...");
-            await BackgroundJob.start(locationTask, backgroundOptions);
+            // Pasamos las opciones con el driverUid real mapeado
+            const options = getBackgroundOptions(driverUid);
+            await BackgroundJob.start(locationTask, options);
+            
             setIsSending(true);
             sendLog("✅ MOTOR ACTIVO — GPS transmitiendo", "success");
 
             Alert.alert(
                 "⚠️ Último paso — Honor X7B",
-                "Ve a Ajustes → Batería → BurritoDriverApp y desactiva el ahorro de energía. Sin esto MagicOS puede cortar el rastreo al apagar la pantalla.",
+                "Ve a Ajustes → Batería → BurritoDriverApp y desactiva el ahorro de energía.",
                 [
                     { text: "Entendido", style: "cancel" },
                     { text: "Ir a Ajustes", onPress: () => Linking.openSettings() }
@@ -188,11 +195,18 @@ export const SendCoordinates = () => {
         await BackgroundJob.stop();
         await stopBurritoService();
         setIsSending(false);
+
+
+        sendLog("Cerrando sesión de Firebase...");
+        import('@react-native-firebase/auth').then(({ default: auth }) => {
+            auth().signOut();
+        });
     };
 
     return (
         <View style={styles.container}>
-            <Text style={styles.mainTitle}>🔥 PANTALLA DE DEBUG 🔥</Text>
+            <Text style={styles.mainTitle}>🔥 PANTALLA DE TRACKING 🔥</Text>
+            <Text style={{ textAlign: 'center', color: '#555', fontSize: 11 }}>ID Conductor: {driverUid}</Text>
 
             <View style={styles.console}>
                 <Text style={styles.consoleTitle}> TERMINAL DE EVENTOS </Text>
@@ -218,9 +232,10 @@ export const SendCoordinates = () => {
                 <Pressable
                     onPress={startProcess}
                     style={[styles.btn, { backgroundColor: isSending ? '#888' : '#2060cd' }]}
+                    disabled={isSending}
                 >
                     <Text style={styles.btnText}>
-                        {isSending ? '🚌 TRANSMITIENDO...' : '🚀 INICIAR DEBUG'}
+                        {isSending ? '🚌 TRANSMITIENDO...' : '🚀 INICIAR RECORRIDO'}
                     </Text>
                 </Pressable>
 
@@ -244,7 +259,7 @@ const styles = StyleSheet.create({
         margin: 15,
         padding: 10,
         borderWidth: 4,
-        borderColor: '#FF0000',
+        borderColor: '#2060cd',
         borderRadius: 5,
     },
     consoleTitle: { color: '#000', fontSize: 14, fontWeight: 'bold', marginBottom: 5, borderBottomWidth: 1, borderBottomColor: '#CCC' },
