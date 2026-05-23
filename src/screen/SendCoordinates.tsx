@@ -2,9 +2,11 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
     AppState, PermissionsAndroid, Platform,
     Pressable, StyleSheet, Text, View, ScrollView,
-    DeviceEventEmitter, Alert, Linking
+    DeviceEventEmitter, Alert, Linking, ActivityIndicator
 } from 'react-native';
-import { updateBurritoLocation, stopBurritoService } from '../services/firebase_service';
+// T11: Importamos las nuevas funciones dinámicas y la base de datos
+import { updateBusLocation, stopBusService } from '../services/firebase_service';
+import database from '@react-native-firebase/database';
 import BackgroundJob from 'react-native-background-actions';
 import Geolocation from '@react-native-community/geolocation';
 
@@ -21,9 +23,9 @@ const sendLog = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
     });
 };
 
-// ACUERDO: Recibe los parámetros del Job de manera segura
 const locationTask = async (taskDataArguments: any) => {
-    const { uidChofer } = taskDataArguments; // <--- AQUÍ RECUPERAMOS EL UID EN SEGUNDO PLANO
+    // T11: Rescatamos también el busId inyectado
+    const { uidChofer, busId } = taskDataArguments; 
     sendLog(`🚀 MOTOR: ¡VIVO CON CHOFER ${uidChofer.substring(0,6)}...!`, "success");
 
     return new Promise<void>((resolve) => {
@@ -34,8 +36,8 @@ const locationTask = async (taskDataArguments: any) => {
 
                 try {
                     sendLog("☁️ Subiendo a Firebase...");
-                    // En T11 mutaremos esta llamada para incluir el busId resuelto
-                    await updateBurritoLocation({
+                    // T11: Usamos updateBusLocation con la placa dinámica
+                    await updateBusLocation(busId, {
                         latitude,
                         longitude,
                         heading: heading ?? 0,
@@ -69,72 +71,40 @@ const locationTask = async (taskDataArguments: any) => {
     });
 };
 
-// Convertimos backgroundOptions en una función o lo armamos dinámicamente al iniciar
-const getBackgroundOptions = (uid: string) => ({
+// T11: Agregamos busId a las opciones
+const getBackgroundOptions = (uid: string, busId: string) => ({
     taskName: 'BurritoTracker',
-    taskTitle: 'El Burrito está en ruta',
+    taskTitle: `El Bus ${busId} está en ruta`,
     taskDesc: 'Transmitiendo ubicación...',
     taskIcon: { name: 'ic_launcher', type: 'mipmap' },
     color: '#2060cd',
-    parameters: { uidChofer: uid }, // <--- INYECTAMOS LA DATA AL HILO DEL BACKGROUND TASK
+    parameters: { uidChofer: uid, busId }, 
     ongoing: true,
 });
 
 const requestAllPermissions = async (): Promise<boolean> => {
     if (Platform.OS === 'android' && Platform.Version >= 33) {
         sendLog("🛡️ Paso 1/3: Pidiendo permiso de notificaciones...");
-        const notifGranted = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
-        );
-
+        const notifGranted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
         if (notifGranted !== PermissionsAndroid.RESULTS.GRANTED) {
             sendLog("❌ NOTIFICACIONES DENEGADAS", "error");
-            Alert.alert(
-                "Permiso crítico denegado",
-                "Sin permiso de notificaciones, el rastreo se detiene en segundo plano.",
-                [
-                    { text: "Cancelar", style: "cancel" },
-                    { text: "Abrir Ajustes", onPress: () => Linking.openSettings() }
-                ]
-            );
-            return false;
-        }
-        sendLog("✅ Paso 1/3: Notificaciones concedidas", "success");
-    } else {
-        sendLog("✅ Paso 1/3: Notificaciones — no requerido", "success");
-    }
-
-    sendLog("🛡️ Paso 2/3: Pidiendo ubicación precisa...");
-    const fineGranted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
-    );
-
-    if (fineGranted !== PermissionsAndroid.RESULTS.GRANTED) {
-        sendLog("❌ PERMISO GPS DENEGADO", "error");
-        Alert.alert("Permiso Requerido", "Necesitamos acceso al GPS para rastrear el bus.");
-        return false;
-    }
-    sendLog("✅ Paso 2/3: Ubicación precisa concedida", "success");
-
-    sendLog("🛡️ Paso 3/3: Pidiendo ubicación en segundo plano...");
-    const bgGranted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION
-    );
-
-    if (bgGranted !== PermissionsAndroid.RESULTS.GRANTED) {
-        sendLog("❌ PERMISO SEGUNDO PLANO DENEGADO", "error");
-        Alert.alert(
-            "Paso necesario",
-            "Para rastrear el bus con la pantalla apagada, ve a Ajustes → Ubicación → 'Permitir siempre'.",
-            [
+            Alert.alert("Permiso crítico denegado", "Sin notificaciones, el rastreo se detiene en segundo plano.", [
                 { text: "Cancelar", style: "cancel" },
                 { text: "Abrir Ajustes", onPress: () => Linking.openSettings() }
-            ]
-        );
+            ]);
+            return false;
+        }
+    }
+    const fineGranted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+    if (fineGranted !== PermissionsAndroid.RESULTS.GRANTED) {
+        sendLog("❌ PERMISO GPS DENEGADO", "error");
         return false;
     }
-    sendLog("✅ Paso 3/3: Segundo plano concedido", "success");
-
+    const bgGranted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION);
+    if (bgGranted !== PermissionsAndroid.RESULTS.GRANTED) {
+        sendLog("❌ PERMISO SEGUNDO PLANO DENEGADO", "error");
+        return false;
+    }
     return true;
 };
 
@@ -142,6 +112,11 @@ export const SendCoordinates = ({ driverUid }: Props) => {
     const [isSending, setIsSending] = useState(false);
     const [logs, setLogs] = useState<any[]>([]);
     const scrollRef = useRef<ScrollView>(null);
+    
+    // T11: Nuevos estados para la auto-asignación
+    const [busId, setBusId] = useState<string | null>(null);
+    const [asignacionId, setAsignacionId] = useState<string | null>(null);
+    const [loadingAssignment, setLoadingAssignment] = useState(true);
 
     useEffect(() => {
         const logSubscription = DeviceEventEmitter.addListener('PRO_DEBUG_LOG', (newLog) => {
@@ -152,13 +127,67 @@ export const SendCoordinates = ({ driverUid }: Props) => {
             sendLog(`📱 APP STATE: ${state.toUpperCase()}`);
         });
 
+        // T11: Consulta Dinámica Oficial en la Nube con Filtros
+        const fetchAssignment = async () => {
+            try {
+                // Generamos la fecha local real del dispositivo en formato YYYY-MM-DD
+                const d = new Date();
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                const today = `${year}-${month}-${day}`;
+                
+                sendLog(`Buscando asignación para hoy (${today})...`);
+
+                // Filtro en la nube gracias a la nueva regla indexOn
+                const snapshot = await database().ref('/asignaciones')
+                    .orderByChild('choferId')
+                    .equalTo(driverUid)
+                    .once('value');
+
+                let foundBusId: string | null = null;
+                let foundAsignacionId: string | null = null;
+
+                if (snapshot.exists()) {
+                    snapshot.forEach((child) => {
+                        const val = child.val();
+                        // Comparamos fecha y que esté activo
+                        if (val.fecha === today && val.activo === true) {
+                            foundBusId = val.busId;
+                            foundAsignacionId = child.key;
+                        }
+                        return undefined;
+                    });
+                }
+
+                if (foundBusId) {
+                    setBusId(foundBusId);
+                    setAsignacionId(foundAsignacionId);
+                    sendLog(`🚌 Bus asignado: ${foundBusId}`, "success");
+                } else {
+                    sendLog(`❌ No hay asignación para hoy (${today}).`, "error");
+                }
+            } catch (err: any) {
+                sendLog(`❌ Error consultando asignación: ${err.message}`, "error");
+            } finally {
+                setLoadingAssignment(false);
+            }
+        };
+
+        fetchAssignment();
+
         return () => {
             logSubscription.remove();
             appStateSub.remove();
         };
-    }, []);
+    }, [driverUid]);
 
     const startProcess = async () => {
+        if (!busId) {
+            Alert.alert("Bloqueo", "No tienes un bus asignado para hoy. Contacta a la oficina.");
+            return;
+        }
+
         if (BackgroundJob.isRunning()) return;
 
         setLogs([]);
@@ -169,21 +198,12 @@ export const SendCoordinates = ({ driverUid }: Props) => {
             if (!permisosOk) return;
 
             sendLog("⚙️ Arrancando Background Service...");
-            // Pasamos las opciones con el driverUid real mapeado
-            const options = getBackgroundOptions(driverUid);
+            // T11: Inyectamos el driverUid y el busId al servicio
+            const options = getBackgroundOptions(driverUid, busId);
             await BackgroundJob.start(locationTask, options);
             
             setIsSending(true);
-            sendLog("✅ MOTOR ACTIVO — GPS transmitiendo", "success");
-
-            Alert.alert(
-                "⚠️ Último paso — Honor X7B",
-                "Ve a Ajustes → Batería → BurritoDriverApp y desactiva el ahorro de energía.",
-                [
-                    { text: "Entendido", style: "cancel" },
-                    { text: "Ir a Ajustes", onPress: () => Linking.openSettings() }
-                ]
-            );
+            sendLog(`✅ MOTOR ACTIVO — Transmitiendo para ${busId}`, "success");
 
         } catch (e: any) {
             sendLog(`❌ CRASH UI: ${e.message}`, "error");
@@ -193,9 +213,10 @@ export const SendCoordinates = ({ driverUid }: Props) => {
     const stopProcess = async () => {
         sendLog("⏹️ Deteniendo proceso...");
         await BackgroundJob.stop();
-        await stopBurritoService();
+        if (busId) {
+            await stopBusService(busId);
+        }
         setIsSending(false);
-
 
         sendLog("Cerrando sesión de Firebase...");
         import('@react-native-firebase/auth').then(({ default: auth }) => {
@@ -229,22 +250,33 @@ export const SendCoordinates = ({ driverUid }: Props) => {
             </View>
 
             <View style={styles.buttons}>
-                <Pressable
-                    onPress={startProcess}
-                    style={[styles.btn, { backgroundColor: isSending ? '#888' : '#2060cd' }]}
-                    disabled={isSending}
-                >
-                    <Text style={styles.btnText}>
-                        {isSending ? '🚌 TRANSMITIENDO...' : '🚀 INICIAR RECORRIDO'}
-                    </Text>
-                </Pressable>
+                {loadingAssignment ? (
+                    <ActivityIndicator size="large" color="#2060cd" style={{ marginBottom: 20 }} />
+                ) : (
+                    <>
+                        {!busId && (
+                            <Text style={styles.errorText}>
+                                ⚠️ No tienes un bus asignado para hoy. Contacta a la oficina.
+                            </Text>
+                        )}
+                        <Pressable
+                            onPress={startProcess}
+                            style={[styles.btn, { backgroundColor: isSending || !busId ? '#888' : '#2060cd' }]}
+                            disabled={isSending || !busId}
+                        >
+                            <Text style={styles.btnText}>
+                                {isSending ? '🚌 TRANSMITIENDO...' : '🚀 INICIAR RECORRIDO'}
+                            </Text>
+                        </Pressable>
 
-                <Pressable
-                    onPress={stopProcess}
-                    style={[styles.btn, { backgroundColor: '#d32f2f' }]}
-                >
-                    <Text style={styles.btnText}>⏹ DETENER TODO</Text>
-                </Pressable>
+                        <Pressable
+                            onPress={stopProcess}
+                            style={[styles.btn, { backgroundColor: '#d32f2f' }]}
+                        >
+                            <Text style={styles.btnText}>⏹ DETENER TODO</Text>
+                        </Pressable>
+                    </>
+                )}
             </View>
         </View>
     );
@@ -267,5 +299,6 @@ const styles = StyleSheet.create({
     logLine:      { fontFamily: 'monospace', fontSize: 12, marginBottom: 4 },
     buttons:      { padding: 20 },
     btn:          { padding: 20, borderRadius: 10, marginBottom: 10, alignItems: 'center', elevation: 5 },
-    btnText:      { color: 'white', fontWeight: 'bold', fontSize: 16 }
+    btnText:      { color: 'white', fontWeight: 'bold', fontSize: 16 },
+    errorText:    { color: '#d32f2f', textAlign: 'center', marginBottom: 10, fontWeight: 'bold', fontSize: 13 }
 });
