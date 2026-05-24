@@ -1,34 +1,40 @@
 import React, { useEffect, useState } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { SendCoordinates } from './screen/SendCoordinates';
-import auth from '@react-native-firebase/auth';
+import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { ActivityIndicator, View } from 'react-native';
 
+import { SendCoordinates } from './screen/SendCoordinates';
+import { LoginDriverScreen } from './screen/LoginDriverScreen'; 
+
 export const DriverApp = () => {
-  const [autenticado, setAutenticado] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+  const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
 
+  // Escucha cambios en la sesión sin recargar la app
   useEffect(() => {
-    auth()
-      .signInWithEmailAndPassword(
-        'choferburrito@unmsm.com',
-        'choferappaccount'
-      )
-      .then(() => setAutenticado(true))
-      .catch(err => console.warn('Error auth conductor:', err));
-  }, []);
+    const subscriber = auth().onAuthStateChanged((currentUser) => {
+      setUser(currentUser);
+      if (initializing) setInitializing(false);
+    });
+    return subscriber; // Limpieza automática
+  }, [initializing]);
 
-  if (!autenticado) {
+  if (initializing) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#2060cd" />
+        <ActivityIndicator size="large" color="#00AEEF" />
       </View>
     );
   }
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={{ flex: 1, borderWidth: 2, borderColor: 'blue' }}>
-        <SendCoordinates />
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#F4F7F9' }}>
+        {user ? (
+          <SendCoordinates driverUid={user.uid} />
+        ) : (
+          <LoginDriverScreen />
+        )}
       </SafeAreaView>
     </SafeAreaProvider>
   );

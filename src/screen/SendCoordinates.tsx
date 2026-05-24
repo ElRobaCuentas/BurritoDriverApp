@@ -6,13 +6,11 @@ import {
 } from 'react-native';
 import { updateBurritoLocation, stopBurritoService } from '../services/firebase_service';
 import BackgroundJob from 'react-native-background-actions';
-import Geolocation, { GeolocationResponse } from '@react-native-community/geolocation';
+import Geolocation from '@react-native-community/geolocation';
 
-const SEND_INTERVAL_MS = 3000;
-const GPS_TIMEOUT_MS   = 10000;
-const MAX_AGE_MS       = 4000;
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+interface Props {
+    driverUid: string;
+}
 
 const sendLog = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
@@ -23,89 +21,66 @@ const sendLog = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
     });
 };
 
-const getCurrentPositionAsync = (): Promise<GeolocationResponse> =>
-    new Promise((resolve, reject) =>
-        Geolocation.getCurrentPosition(resolve, reject, {
-            enableHighAccuracy: true,
-            timeout: GPS_TIMEOUT_MS,
-            maximumAge: MAX_AGE_MS,
-        })
-    );
-
+// ACUERDO: Recibe los parámetros del Job de manera segura
 const locationTask = async (taskDataArguments: any) => {
-    const { delay } = taskDataArguments;
-    let iteration = 1;
+    const { uidChofer } = taskDataArguments; // <--- AQUÍ RECUPERAMOS EL UID EN SEGUNDO PLANO
+    sendLog(`🚀 MOTOR: ¡VIVO CON CHOFER ${uidChofer.substring(0,6)}...!`, "success");
 
-    sendLog("🚀 MOTOR: ¡VIVO Y CORRIENDO!", "success");
+    return new Promise<void>((resolve) => {
+        const watchId = Geolocation.watchPosition(
+            async (position) => {
+                const { latitude, longitude, heading, speed } = position.coords;
+                sendLog(`✅ POSICIÓN: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, "success");
 
-    while (BackgroundJob.isRunning()) {
-        sendLog(`⏱️ Iteración #${iteration}`);
-        iteration++;
-        let position;
+                try {
+                    sendLog("☁️ Subiendo a Firebase...");
+                    // En T11 mutaremos esta llamada para incluir el busId resuelto
+                    await updateBurritoLocation({
+                        latitude,
+                        longitude,
+                        heading: heading ?? 0,
+                        speed: speed ?? 0,
+                        timestamp: Date.now(),
+                    });
+                    sendLog("✅ FIREBASE ACTUALIZADO", "success");
+                } catch (err: any) {
+                    sendLog(`❌ FALLO FIREBASE: ${err.message}`, "error");
+                }
+            },
+            (err) => {
+                sendLog(`❌ FALLO GPS: ${err.message}`, "error");
+            },
+            {
+                enableHighAccuracy: true,
+                distanceFilter: 2, 
+                interval: 3000,    
+                fastestInterval: 2000, 
+            }
+        );
 
-        // --- BLOQUE 1: INTENTAR OBTENER GPS ---
-        try {
-            sendLog("🛰️ Consultando sensor GPS...");
-            position = await getCurrentPositionAsync();
-            const { latitude, longitude } = position.coords;
-            sendLog(`✅ POSICIÓN: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, "success");
-        } catch (err: any) {
-            sendLog(`❌ FALLO GPS: ${err.message}`, "error");
-            await sleep(delay);
-            continue;
-        }
-
-        // --- BLOQUE 2: INTENTAR SUBIR A FIREBASE ---
-        try {
-            sendLog("☁️ Subiendo a Firebase...");
-            await updateBurritoLocation({
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-                heading: position.coords.heading ?? 0,
-                speed: position.coords.speed ?? 0,
-            });
-            sendLog("✅ FIREBASE ACTUALIZADO", "success");
-        } catch (err: any) {
-            sendLog(`❌ FALLO FIREBASE: ${err.message}`, "error");
-        }
-
-        await sleep(delay);
-    }
-    sendLog("🛑 MOTOR APAGADO", "error");
+        const keepAlive = setInterval(() => {
+            if (!BackgroundJob.isRunning()) {
+                Geolocation.clearWatch(watchId);
+                clearInterval(keepAlive);
+                sendLog("🛑 MOTOR APAGADO", "error");
+                resolve();
+            }
+        }, 1000);
+    });
 };
 
-const backgroundOptions = {
+// Convertimos backgroundOptions en una función o lo armamos dinámicamente al iniciar
+const getBackgroundOptions = (uid: string) => ({
     taskName: 'BurritoTracker',
     taskTitle: 'El Burrito está en ruta',
     taskDesc: 'Transmitiendo ubicación...',
     taskIcon: { name: 'ic_launcher', type: 'mipmap' },
     color: '#2060cd',
-    parameters: { delay: SEND_INTERVAL_MS },
+    parameters: { uidChofer: uid }, // <--- INYECTAMOS LA DATA AL HILO DEL BACKGROUND TASK
     ongoing: true,
-};
+});
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SE PIDEN 3 PERMISOS EN ORDEN ESTRICTO:
-//
-// PERMISO 0 — POST_NOTIFICATIONS (Android 13+)
-//   ERA EL PROBLEMA RAÍZ. Estaba en el Manifest pero nunca se pedía en runtime.
-//   Sin este permiso, Android bloquea la notificación persistente silenciosamente.
-//   Sin notificación = el Foreground Service nunca se ancla al sistema.
-//   Sin Foreground Service real = Android mata el proceso al ir al fondo.
-//   Resultado: 2 peticiones más y para. Exactamente lo que veíamos.
-//
-// PERMISO 1 — ACCESS_FINE_LOCATION
-//   La ventanita normal de GPS. Debe pedirse antes que el de segundo plano.
-//
-// PERMISO 2 — ACCESS_BACKGROUND_LOCATION
-//   Android 13/14/15 exige pedirlo en un paso separado DESPUÉS del primero.
-//   El usuario debe elegir "Permitir siempre" o el GPS se para con pantalla apagada.
-// ─────────────────────────────────────────────────────────────────────────────
 const requestAllPermissions = async (): Promise<boolean> => {
-
-    // ── PERMISO 0: NOTIFICACIONES (el que faltaba) ──────────────────────────
-    // Solo necesario en Android 13 (API 33) en adelante.
-    // En Android 12 o menos, las notificaciones se conceden automáticamente.
     if (Platform.OS === 'android' && Platform.Version >= 33) {
         sendLog("🛡️ Paso 1/3: Pidiendo permiso de notificaciones...");
         const notifGranted = await PermissionsAndroid.request(
@@ -113,23 +88,22 @@ const requestAllPermissions = async (): Promise<boolean> => {
         );
 
         if (notifGranted !== PermissionsAndroid.RESULTS.GRANTED) {
-            sendLog("❌ NOTIFICACIONES DENEGADAS — El Foreground Service no puede anclarse", "error");
+            sendLog("❌ NOTIFICACIONES DENEGADAS", "error");
             Alert.alert(
                 "Permiso crítico denegado",
-                "Sin permiso de notificaciones, el rastreo se detiene en segundo plano. Ve a Ajustes → Apps → BurritoDriver → Notificaciones y actívalas.",
+                "Sin permiso de notificaciones, el rastreo se detiene en segundo plano.",
                 [
                     { text: "Cancelar", style: "cancel" },
                     { text: "Abrir Ajustes", onPress: () => Linking.openSettings() }
                 ]
             );
-            return false; // Sin este permiso no tiene sentido continuar
+            return false;
         }
         sendLog("✅ Paso 1/3: Notificaciones concedidas", "success");
     } else {
-        sendLog("✅ Paso 1/3: Notificaciones — no requerido en esta versión de Android", "success");
+        sendLog("✅ Paso 1/3: Notificaciones — no requerido", "success");
     }
 
-    // ── PERMISO 1: UBICACIÓN PRECISA ─────────────────────────────────────────
     sendLog("🛡️ Paso 2/3: Pidiendo ubicación precisa...");
     const fineGranted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
@@ -137,24 +111,18 @@ const requestAllPermissions = async (): Promise<boolean> => {
 
     if (fineGranted !== PermissionsAndroid.RESULTS.GRANTED) {
         sendLog("❌ PERMISO GPS DENEGADO", "error");
-        Alert.alert(
-            "Permiso Requerido",
-            "Necesitamos acceso al GPS para rastrear el bus.",
-        );
+        Alert.alert("Permiso Requerido", "Necesitamos acceso al GPS para rastrear el bus.");
         return false;
     }
     sendLog("✅ Paso 2/3: Ubicación precisa concedida", "success");
 
-    // ── PERMISO 2: UBICACIÓN EN SEGUNDO PLANO ────────────────────────────────
-    // Android abre su propia pantalla de configuración.
-    // El conductor DEBE elegir "Permitir siempre".
     sendLog("🛡️ Paso 3/3: Pidiendo ubicación en segundo plano...");
     const bgGranted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION
     );
 
     if (bgGranted !== PermissionsAndroid.RESULTS.GRANTED) {
-        sendLog("❌ PERMISO SEGUNDO PLANO DENEGADO — GPS se pausará al apagar pantalla", "error");
+        sendLog("❌ PERMISO SEGUNDO PLANO DENEGADO", "error");
         Alert.alert(
             "Paso necesario",
             "Para rastrear el bus con la pantalla apagada, ve a Ajustes → Ubicación → 'Permitir siempre'.",
@@ -165,12 +133,12 @@ const requestAllPermissions = async (): Promise<boolean> => {
         );
         return false;
     }
-    sendLog("✅ Paso 3/3: Segundo plano concedido — GPS activo con pantalla apagada", "success");
+    sendLog("✅ Paso 3/3: Segundo plano concedido", "success");
 
     return true;
 };
 
-export const SendCoordinates = () => {
+export const SendCoordinates = ({ driverUid }: Props) => {
     const [isSending, setIsSending] = useState(false);
     const [logs, setLogs] = useState<any[]>([]);
     const scrollRef = useRef<ScrollView>(null);
@@ -201,17 +169,16 @@ export const SendCoordinates = () => {
             if (!permisosOk) return;
 
             sendLog("⚙️ Arrancando Background Service...");
-            await BackgroundJob.start(locationTask, backgroundOptions);
+            // Pasamos las opciones con el driverUid real mapeado
+            const options = getBackgroundOptions(driverUid);
+            await BackgroundJob.start(locationTask, options);
+            
             setIsSending(true);
-            sendLog("✅ MOTOR ACTIVO — GPS transmitiendo cada 3 segundos", "success");
-            sendLog("🔔 Busca la notificación persistente en tu barra de estado", "info");
+            sendLog("✅ MOTOR ACTIVO — GPS transmitiendo", "success");
 
-            // Advertencia de batería para Honor/Huawei
-            // MagicOS mata procesos en segundo plano aunque tengan todos los permisos.
-            // El conductor debe desactivar el ahorro de energía manualmente.
             Alert.alert(
                 "⚠️ Último paso — Honor X7B",
-                "Ve a Ajustes → Batería → BurritoDriverApp y desactiva el ahorro de energía. Sin esto MagicOS puede cortar el rastreo al apagar la pantalla.",
+                "Ve a Ajustes → Batería → BurritoDriverApp y desactiva el ahorro de energía.",
                 [
                     { text: "Entendido", style: "cancel" },
                     { text: "Ir a Ajustes", onPress: () => Linking.openSettings() }
@@ -228,11 +195,18 @@ export const SendCoordinates = () => {
         await BackgroundJob.stop();
         await stopBurritoService();
         setIsSending(false);
+
+
+        sendLog("Cerrando sesión de Firebase...");
+        import('@react-native-firebase/auth').then(({ default: auth }) => {
+            auth().signOut();
+        });
     };
 
     return (
         <View style={styles.container}>
-            <Text style={styles.mainTitle}>🔥 PANTALLA DE DEBUG 🔥</Text>
+            <Text style={styles.mainTitle}>🔥 PANTALLA DE TRACKING 🔥</Text>
+            <Text style={{ textAlign: 'center', color: '#555', fontSize: 11 }}>ID Conductor: {driverUid}</Text>
 
             <View style={styles.console}>
                 <Text style={styles.consoleTitle}> TERMINAL DE EVENTOS </Text>
@@ -258,9 +232,10 @@ export const SendCoordinates = () => {
                 <Pressable
                     onPress={startProcess}
                     style={[styles.btn, { backgroundColor: isSending ? '#888' : '#2060cd' }]}
+                    disabled={isSending}
                 >
                     <Text style={styles.btnText}>
-                        {isSending ? '🚌 TRANSMITIENDO...' : '🚀 INICIAR DEBUG'}
+                        {isSending ? '🚌 TRANSMITIENDO...' : '🚀 INICIAR RECORRIDO'}
                     </Text>
                 </Pressable>
 
@@ -284,7 +259,7 @@ const styles = StyleSheet.create({
         margin: 15,
         padding: 10,
         borderWidth: 4,
-        borderColor: '#FF0000',
+        borderColor: '#2060cd',
         borderRadius: 5,
     },
     consoleTitle: { color: '#000', fontSize: 14, fontWeight: 'bold', marginBottom: 5, borderBottomWidth: 1, borderBottomColor: '#CCC' },
