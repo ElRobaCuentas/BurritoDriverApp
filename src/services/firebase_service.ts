@@ -8,30 +8,29 @@ interface LocationData {
   timestamp: number;
 }
 
-const BURRITO_LOCATION_PATH = '/ubicacion_burrito';
-
-export const updateBurritoLocation = async (data: LocationData) => {
+// NUEVA FUNCIÓN PARA T11: Actualiza usando el busId dinámico
+export const updateBusLocation = async (busId: string, data: LocationData) => {
   try {
-    await database().ref(BURRITO_LOCATION_PATH).update({
-      ...data,  // Aquí ya viene el timestamp de Date.now()
+    await database().ref(`/ubicacion_buses/${busId}`).update({
+      ...data,
       isActive: true,
     });
-    
     return true; 
   } catch (error) {
-    console.error('Error en FirebaseService:', error);
+    console.error('Error actualizando ubicación del bus:', error);
     return false;
   }
 };
 
-export const stopBurritoService = async () => {
+// NUEVA FUNCIÓN PARA T11: Detiene el servicio usando el busId dinámico
+export const stopBusService = async (busId: string) => {
   try {
-    await database().ref(BURRITO_LOCATION_PATH).update({
+    await database().ref(`/ubicacion_buses/${busId}`).update({
       isActive: false
     });
     return true;
   } catch (error) {
-    console.error('Error deteniendo servicio:', error);
+    console.error('Error deteniendo servicio del bus:', error);
     return false;
   }
 };
