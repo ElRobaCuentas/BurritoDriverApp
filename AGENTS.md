@@ -22,8 +22,9 @@
 - Persistence intentionally DISABLED (see comment in `index.js` — real-time tracker, offline queue causes position burst on reconnect)
 
 ## Testing
-- Single test file: `__tests__/App.test.tsx` — renders `App.tsx` (not `DriverApp.tsx`)
-- Run: `npm test`
+- Jest is configured with the `react-native` preset.
+- The only test file (`__tests__/App.test.tsx`) is a legacy artifact and currently fails because it imports `../App`, which no longer exists after the migration to `src/DriverApp.tsx`.
+- `npm test` is currently not passing without fixing or removing that test.
 
 ## Conventions
 - Spanish user-facing strings, English code
