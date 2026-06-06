@@ -325,3 +325,142 @@ Si ves [D] [E] [F] [G] pero no [H] (ni [C] del JS): la promesa nunca se resolvi�
 Verificación: BUILD SUCCESSFUL in 5s — sin errores de sintaxis ni compilación.
 
 *************************************************************************************
+
+Now I need to modify RNBackgroundActionsTask.java to add the instrumentation logs as planned:
+
+Checkpoint 4: RNBackgroundActionsTask.java — onStartCommand() (líneas 86-117)
+
+Insertar logs:
+- Line 91: después de Bundle extras = intent.getExtras(); → Log.d("ANR_TRACE", "I onStartCommand entered, pid=" + android.os.Process.myPid());
+- Line 95: después de new BackgroundTaskOptions(extras) → Log.d("ANR_TRACE", "J BackgroundTaskOptions reconstructed");
+- Line 96: después de createNotificationChannel(...) → Log.d("ANR_TRACE", "J1 notification channel created");
+- Line 100: antes de try { → Log.d("ANR_TRACE", "K about to call startForeground()");
+- Line 106: después de ServiceCompat.startForeground(...) en try → Log.d("ANR_TRACE", "K1 startForeground() succeeded");
+- Line 107: dentro de catch (RuntimeException e) { → Log.d("ANR_TRACE", "K2 startForeground() FAILED: " + e.getMessage());
+- Line 116: antes de return super.onStartCommand(...) → Log.d("ANR_TRACE", "L onStartCommand returning");
+
+I also need to add import android.util.Log;.
+
+Let me plan the edits carefully.
+
+Edit 1: Add import
+oldString: import android.os.Bundle;
+newString: import android.os.Bundle;\nimport android.util.Log;
+
+Edit 2: Replace the onStartCommand method body entirely with the instrumented version
+I'll replace from line 85 to line 117.
+
+Let me do the edits.
+← Edit BurritoDriverApp\node_modules\react-native-background-actions\android\src\main\java\com\asterinet\react\bgactions\RNBackgroundActionsTask.java
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.util.Log;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.app.NotificationCompat;
+← Edit BurritoDriverApp\node_modules\react-native-background-actions\android\src\main\java\com\asterinet\react\bgactions\RNBackgroundActionsTask.java
+        stopSelf(startId);
+        return START_NOT_STICKY;
+    }
+    final Bundle extras = intent.getExtras();
+    Log.d("ANR_TRACE", "I onStartCommand entered, pid=" + android.os.Process.myPid());
+    if (extras == null) {
+        throw new IllegalArgumentException("Extras cannot be null");
+    }
+    final BackgroundTaskOptions bgOptions = new BackgroundTaskOptions(extras);
+    Log.d("ANR_TRACE", "J BackgroundTaskOptions reconstructed");
+    createNotificationChannel(bgOptions.getTaskTitle(), bgOptions.getTaskDesc()); // Necessary creating channel for API 26+
+    Log.d("ANR_TRACE", "J1 notification channel created");
+    // Create the notification
+    final Notification notification = buildNotification(this, bgOptions);
+
+    Log.d("ANR_TRACE", "K about to call startForeground()");
+    try {
+        ServiceCompat.startForeground(
+            this,
+            SERVICE_NOTIFICATION_ID,
+            notification,
+            bgOptions.getForegroundServiceType()
+        );
+        Log.d("ANR_TRACE", "K1 startForeground() succeeded");
+    } catch (RuntimeException e) {
+        Log.d("ANR_TRACE", "K2 startForeground() FAILED: " + e.getMessage());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                && e instanceof android.app.ForegroundServiceStartNotAllowedException) {
+            // Android 12+: not allowed to start foreground service from background
+            stopSelf(startId);
+            return START_NOT_STICKY;
+        }
+        throw e;
+    }
+    Log.d("ANR_TRACE", "L onStartCommand returning");
+    return super.onStartCommand(intent, flags, startId);
+}
+
+@Override
+Thought: 383ms
+Both edits applied successfully. Now let me verify the file content and then run the Java compilation to confirm it builds correctly.
+→Read BurritoDriverApp\node_modules\react-native-background-actions\android\src\main\java\com\asterinet\react\bgactions\RNBackgroundActionsTask.java 
+# Verify Java compilation for all modules in BurritoDriverApp\android
+$ .\gradlew.bat :app:compileDebugJavaWithJavac 2>&1 | Select-Object -Last 20
+> Task :react-native-safe-area-context:generateDebugBuildConfig UP-TO-DATE
+> Task :react-native-safe-area-context:compileDebugKotlin UP-TO-DATE
+> Task :react-native-safe-area-context:javaPreCompileDebug UP-TO-DATE
+> Task :react-native-safe-area-context:compileDebugJavaWithJavac UP-TO-DATE
+> Task :react-native-safe-area-context:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :app:compileDebugKotlin UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac UP-TO-DATE
+
+[Incubating] Problems report is available at: file:///C:/ProyectosMovil/BurritoDriverApp/android/build/reports/problems/problems-report.html
+…
+Click to expand
+Thought: 706ms
+The file looks correct with all 7 logs in place, and the build is successful (BUILD SUCCESSFUL in 4s). Let me report to the user.
+
+Note: The file doesn't have a git diff for node_modules (they're gitignored), so I'll show the changes in-line with the read output.
+Checkpoint 4 implementado. BUILD SUCCESSFUL.
+Archivo: RNBackgroundActionsTask.java (140 → 148 líneas)
+Diff:
++import android.util.Log;
+
+     public int onStartCommand(Intent intent, int flags, int startId) {
+         ...
+         final Bundle extras = intent.getExtras();
++        Log.d("ANR_TRACE", "I onStartCommand entered, pid=" + android.os.Process.myPid());
+         ...
+         final BackgroundTaskOptions bgOptions = new BackgroundTaskOptions(extras);
++        Log.d("ANR_TRACE", "J BackgroundTaskOptions reconstructed");
+         createNotificationChannel(...);
++        Log.d("ANR_TRACE", "J1 notification channel created");
+         final Notification notification = buildNotification(this, bgOptions);
+
++        Log.d("ANR_TRACE", "K about to call startForeground()");
+         try {
+             ServiceCompat.startForeground(...);
++            Log.d("ANR_TRACE", "K1 startForeground() succeeded");
+         } catch (RuntimeException e) {
++            Log.d("ANR_TRACE", "K2 startForeground() FAILED: " + e.getMessage());
+             ...
+         }
++        Log.d("ANR_TRACE", "L onStartCommand returning");
+         return super.onStartCommand(intent, flags, startId);
+Qué responde cada log:
+Log	¿Dónde corre?	Responde
+[I]	Proceso separado (PID del servicio)	¿El servicio RNBackgroundActionsTask fue creado por Android? Incluye el PID real.
+[J]	Proceso separado	¿BackgroundTaskOptions se reconstruyó sin error desde los extras?
+[J1]	Proceso separado	¿El canal de notificación se creó correctamente?
+[K]	Proceso separado	Punto justo antes del startForeground() crítico.
+[K1]	Proceso separado	startForeground() exitoso — el servicio se promovió a foreground sin crash.
+[K2]	Proceso separado	startForeground() falló con ForegroundServiceStartNotAllowedException o InvalidForegroundServiceTypeException.
+[L]	Proceso separado	onStartCommand está por retornar — el servicio arrancó completamente.
+Interpretación clave en el contexto del ANR:
+Si ves [I] [J] [J1] [K] pero no [K1] (sino [K2]), el crash por foregroundServiceType (InvalidForegroundServiceTypeException) ocurre en el proceso separado — esto no bloquea el main thread del proceso principal, pero puede estar relacionado con la secuencia del ANR si la excepción no se maneja adecuadamente.
+Si ves [I] aparecer 63 segundos después de que el proceso principal (7468) se colgó, confirma que el servicio se lanzó como consecuencia tardía de una solicitud hecha antes del bloqueo.
+
+
+
+*************************************************************************************
