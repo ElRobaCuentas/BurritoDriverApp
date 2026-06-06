@@ -183,6 +183,7 @@ export const SendCoordinates = ({ driverDni }: Props) => {
     }, [driverDni]);
 
     const startProcess = async () => {
+        console.log("[ANR] 0 startProcess called");
         if (!busId) {
             Alert.alert("Bloqueo", "No tienes un bus asignado para hoy. Contacta a la oficina.");
             return;
@@ -194,18 +195,24 @@ export const SendCoordinates = ({ driverDni }: Props) => {
         sendLog("▶️ Botón presionado: Iniciando...", "info");
 
         try {
+            console.log("[ANR] 1 checking permissions...");
             const permisosOk = await requestAllPermissions();
+            console.log("[ANR] 2 permissions result:", permisosOk);
             if (!permisosOk) return;
 
             sendLog("⚙️ Arrancando Background Service...");
+            console.log("[ANR] 3 calling BackgroundJob.start()...");
             // T11: Inyectamos el driverDni y el busId al servicio
             const options = getBackgroundOptions(driverDni, busId);
             await BackgroundJob.start(locationTask, options);
+            console.log("[ANR] 4 BackgroundJob.start() returned");
             
             setIsSending(true);
+            console.log("[ANR] 5 setIsSending done");
             sendLog(`✅ MOTOR ACTIVO — Transmitiendo para ${busId}`, "success");
 
         } catch (e: any) {
+            console.log("[ANR] X startProcess CRASHED:", e.message);
             sendLog(`❌ CRASH UI: ${e.message}`, "error");
         }
     };
