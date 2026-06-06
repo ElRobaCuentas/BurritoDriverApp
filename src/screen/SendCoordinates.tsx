@@ -11,7 +11,7 @@ import BackgroundJob from 'react-native-background-actions';
 import Geolocation from '@react-native-community/geolocation';
 
 interface Props {
-    driverUid: string;
+    driverDni: string;
 }
 
 const sendLog = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
@@ -108,7 +108,7 @@ const requestAllPermissions = async (): Promise<boolean> => {
     return true;
 };
 
-export const SendCoordinates = ({ driverUid }: Props) => {
+export const SendCoordinates = ({ driverDni }: Props) => {
     const [isSending, setIsSending] = useState(false);
     const [logs, setLogs] = useState<any[]>([]);
     const scrollRef = useRef<ScrollView>(null);
@@ -142,7 +142,7 @@ export const SendCoordinates = ({ driverUid }: Props) => {
                 // Filtro en la nube gracias a la nueva regla indexOn
                 const snapshot = await database().ref('/asignaciones')
                     .orderByChild('choferId')
-                    .equalTo(driverUid)
+                    .equalTo(driverDni)
                     .once('value');
 
                 let foundBusId: string | null = null;
@@ -180,7 +180,7 @@ export const SendCoordinates = ({ driverUid }: Props) => {
             logSubscription.remove();
             appStateSub.remove();
         };
-    }, [driverUid]);
+    }, [driverDni]);
 
     const startProcess = async () => {
         if (!busId) {
@@ -198,8 +198,8 @@ export const SendCoordinates = ({ driverUid }: Props) => {
             if (!permisosOk) return;
 
             sendLog("⚙️ Arrancando Background Service...");
-            // T11: Inyectamos el driverUid y el busId al servicio
-            const options = getBackgroundOptions(driverUid, busId);
+            // T11: Inyectamos el driverDni y el busId al servicio
+            const options = getBackgroundOptions(driverDni, busId);
             await BackgroundJob.start(locationTask, options);
             
             setIsSending(true);
@@ -227,7 +227,7 @@ export const SendCoordinates = ({ driverUid }: Props) => {
     return (
         <View style={styles.container}>
             <Text style={styles.mainTitle}>🔥 PANTALLA DE TRACKING 🔥</Text>
-            <Text style={{ textAlign: 'center', color: '#555', fontSize: 11 }}>ID Conductor: {driverUid}</Text>
+            <Text style={{ textAlign: 'center', color: '#555', fontSize: 11 }}>DNI Conductor: {driverDni}</Text>
 
             <View style={styles.console}>
                 <Text style={styles.consoleTitle}> TERMINAL DE EVENTOS </Text>

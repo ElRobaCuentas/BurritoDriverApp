@@ -31,7 +31,7 @@ export const DriverApp = () => {
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1, backgroundColor: '#F4F7F9' }}>
         {user ? (
-          <SendCoordinates driverUid={user.uid} />
+          <SendCoordinates driverDni={user.email?.split('@')[0] || ''} />
         ) : (
           <LoginDriverScreen />
         )}
