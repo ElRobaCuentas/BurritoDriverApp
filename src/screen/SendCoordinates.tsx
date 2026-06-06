@@ -27,11 +27,14 @@ const locationTask = async (taskDataArguments: any) => {
     // T11: Rescatamos también el busId inyectado
     const { uidChofer, busId } = taskDataArguments; 
     sendLog(`🚀 MOTOR: ¡VIVO CON CHOFER ${uidChofer.substring(0,6)}...!`, "success");
+    console.log("[ANR] M locationTask started, params:", JSON.stringify(taskDataArguments));
 
     return new Promise<void>((resolve) => {
+        console.log("[ANR] N calling watchPosition...");
         const watchId = Geolocation.watchPosition(
             async (position) => {
                 const { latitude, longitude, heading, speed } = position.coords;
+                console.log("[ANR] P watchPosition callback: lat=", latitude, "lng=", longitude);
                 sendLog(`✅ POSICIÓN: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, "success");
 
                 try {
@@ -59,6 +62,7 @@ const locationTask = async (taskDataArguments: any) => {
                 fastestInterval: 2000, 
             }
         );
+        console.log("[ANR] O watchPosition returned, id:", watchId);
 
         const keepAlive = setInterval(() => {
             if (!BackgroundJob.isRunning()) {
