@@ -82,8 +82,9 @@ const getBackgroundOptions = (uid: string, busId: string) => ({
     taskDesc: 'Transmitiendo ubicación...',
     taskIcon: { name: 'ic_launcher', type: 'mipmap' },
     color: '#2060cd',
-    parameters: { uidChofer: uid, busId }, 
+    parameters: { uidChofer: uid, busId },
     ongoing: true,
+    foregroundServiceType: ['location' as const],
 });
 
 const requestAllPermissions = async (): Promise<boolean> => {
