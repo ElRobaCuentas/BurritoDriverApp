@@ -27,14 +27,11 @@ const locationTask = async (taskDataArguments: any) => {
     // T11: Rescatamos también el busId inyectado
     const { uidChofer, busId } = taskDataArguments; 
     sendLog(`🚀 MOTOR: ¡VIVO CON CHOFER ${uidChofer.substring(0,6)}...!`, "success");
-    console.log("[ANR] M locationTask started, params:", JSON.stringify(taskDataArguments));
 
     return new Promise<void>((resolve) => {
-        console.log("[ANR] N calling watchPosition...");
         const watchId = Geolocation.watchPosition(
             async (position) => {
                 const { latitude, longitude, heading, speed } = position.coords;
-                console.log("[ANR] P watchPosition callback: lat=", latitude, "lng=", longitude);
                 sendLog(`✅ POSICIÓN: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, "success");
 
                 try {
@@ -62,7 +59,6 @@ const locationTask = async (taskDataArguments: any) => {
                 fastestInterval: 2000, 
             }
         );
-        console.log("[ANR] O watchPosition returned, id:", watchId);
 
         const keepAlive = setInterval(() => {
             if (!BackgroundJob.isRunning()) {
@@ -188,7 +184,6 @@ export const SendCoordinates = ({ driverDni }: Props) => {
     }, [driverDni]);
 
     const startProcess = async () => {
-        console.log("[ANR] 0 startProcess called");
         if (!busId) {
             Alert.alert("Bloqueo", "No tienes un bus asignado para hoy. Contacta a la oficina.");
             return;
@@ -200,24 +195,18 @@ export const SendCoordinates = ({ driverDni }: Props) => {
         sendLog("▶️ Botón presionado: Iniciando...", "info");
 
         try {
-            console.log("[ANR] 1 checking permissions...");
             const permisosOk = await requestAllPermissions();
-            console.log("[ANR] 2 permissions result:", permisosOk);
             if (!permisosOk) return;
 
             sendLog("⚙️ Arrancando Background Service...");
-            console.log("[ANR] 3 calling BackgroundJob.start()...");
             // T11: Inyectamos el driverDni y el busId al servicio
             const options = getBackgroundOptions(driverDni, busId);
             await BackgroundJob.start(locationTask, options);
-            console.log("[ANR] 4 BackgroundJob.start() returned");
             
             setIsSending(true);
-            console.log("[ANR] 5 setIsSending done");
             sendLog(`✅ MOTOR ACTIVO — Transmitiendo para ${busId}`, "success");
 
         } catch (e: any) {
-            console.log("[ANR] X startProcess CRASHED:", e.message);
             sendLog(`❌ CRASH UI: ${e.message}`, "error");
         }
     };
