@@ -108,3 +108,4 @@ consultar `FIREBASE_SCHEMA.md`.
 | `ARCHITECTURE.md` | Flujo de datos, ciclo de vida del tracking. |
 | `FIREBASE_SCHEMA.md` | Estructura de nodos y payloads de la RTDB. |
 | `AGENTS.md` | Comandos, convenciones y detalles para asistentes IA. |
+| `BUGS_RESUELTOS/` | Historial de bugs resueltos durante el desarrollo. |
