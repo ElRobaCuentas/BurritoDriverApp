@@ -1,23 +1,37 @@
 import React, { useEffect, useState } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { NavigationContainer } from '@react-navigation/native';
 import { ActivityIndicator, View } from 'react-native';
 
 import { SendCoordinates } from './screen/SendCoordinates';
-import { LoginDriverScreen } from './screen/LoginDriverScreen'; 
+import { LoginDriverScreen } from './screen/LoginDriverScreen';
+import { AdminNavigator } from './navigation/AdminNavigator';
+import { existeAdministrador } from './features/admin/services/admin_check';
 
 export const DriverApp = () => {
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  // Escucha cambios en la sesión sin recargar la app
   useEffect(() => {
     const subscriber = auth().onAuthStateChanged((currentUser) => {
       setUser(currentUser);
-      if (initializing) setInitializing(false);
     });
-    return subscriber; // Limpieza automática
-  }, [initializing]);
+    return subscriber;
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      existeAdministrador(user.uid).then((admin) => {
+        setIsAdmin(admin);
+        setInitializing(false);
+      });
+    } else {
+      setIsAdmin(false);
+      setInitializing(false);
+    }
+  }, [user]);
 
   if (initializing) {
     return (
@@ -27,14 +41,28 @@ export const DriverApp = () => {
     );
   }
 
+  if (!user) {
+    return (
+      <SafeAreaProvider>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#F4F7F9' }}>
+          <LoginDriverScreen />
+        </SafeAreaView>
+      </SafeAreaProvider>
+    );
+  }
+
+  if (isAdmin) {
+    return (
+      <NavigationContainer>
+        <AdminNavigator />
+      </NavigationContainer>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1, backgroundColor: '#F4F7F9' }}>
-        {user ? (
-          <SendCoordinates driverDni={user.email?.split('@')[0] || ''} />
-        ) : (
-          <LoginDriverScreen />
-        )}
+        <SendCoordinates driverDni={user.email?.split('@')[0] || ''} />
       </SafeAreaView>
     </SafeAreaProvider>
   );

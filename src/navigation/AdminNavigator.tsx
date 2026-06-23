@@ -18,6 +18,7 @@ export const AdminNavigator = () => {
   return (
     <Stack.Navigator
       screenOptions={{
+        headerShown: false,
         headerStyle: {
           backgroundColor: '#00AEEF',
         },

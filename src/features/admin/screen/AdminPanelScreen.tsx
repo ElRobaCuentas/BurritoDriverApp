@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import auth from '@react-native-firebase/auth';
 import { AdminStackParamList } from '../../../navigation/AdminNavigator';
 import { COLORS } from '../../../shared/theme/colors';
 import { TYPOGRAPHY } from '../../../shared/theme/typography';
@@ -10,6 +11,13 @@ type AdminPanelNavProp = StackNavigationProp<AdminStackParamList, 'AdminPanelScr
 
 export const AdminPanelScreen = () => {
   const navigation = useNavigation<AdminPanelNavProp>();
+
+  const handleLogout = () => {
+    Alert.alert('Cerrar Sesión', '¿Estás seguro de que deseas salir?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Cerrar Sesión', style: 'destructive', onPress: () => auth().signOut() },
+    ]);
+  };
 
   return (
     <View style={styles.container}>
@@ -41,7 +49,7 @@ export const AdminPanelScreen = () => {
           </View>
         </TouchableOpacity>
 
-        {/* BOTÓN GESTIÓN DE BUSES */}
+        {/* BOTÓN ASIGNACIONES */}
         <TouchableOpacity 
           style={styles.menuButton}
           onPress={() => navigation.navigate('AsignacionesScreen')}
@@ -51,6 +59,14 @@ export const AdminPanelScreen = () => {
             <Text style={styles.buttonTitle}>Asignaciones Diarias</Text>
             <Text style={styles.buttonDescription}>Vincular conductores con vehículos para el turno de hoy</Text>
           </View>
+        </TouchableOpacity>
+
+        {/* BOTÓN CERRAR SESIÓN */}
+        <TouchableOpacity 
+          style={styles.logoutButton}
+          onPress={handleLogout}
+        >
+          <Text style={styles.logoutText}>Cerrar Sesión</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -110,5 +126,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666666',
     marginTop: 2,
+  },
+  logoutButton: {
+    backgroundColor: '#FF4444',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 30,
+  },
+  logoutText: {
+    color: COLORS.white,
+    fontFamily: TYPOGRAPHY.primary.bold,
+    fontSize: 16,
   },
 });
