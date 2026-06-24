@@ -1,6 +1,7 @@
 import { firebaseDatabase } from '../../../shared/config/firebase';
 import auth from '@react-native-firebase/auth';
 import firebase from '@react-native-firebase/app';
+import type { ReactNativeFirebase } from '@react-native-firebase/app';
 
 export interface Chofer {
   dni: string;
@@ -72,11 +73,11 @@ export const AdminService = {
     const password = chofer.dni;
 
     const config = firebase.app().options;
-    let secondaryApp: any;
+    let secondaryApp: ReactNativeFirebase.FirebaseApp;
     try {
       secondaryApp = firebase.app('SecondaryApp');
     } catch (e) {
-      secondaryApp = firebase.initializeApp(config, 'SecondaryApp');
+      secondaryApp = await firebase.initializeApp(config, 'SecondaryApp');
     }
 
     try {
