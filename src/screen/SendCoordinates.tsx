@@ -7,6 +7,7 @@ import {
 // T11: Importamos las nuevas funciones dinámicas y la base de datos
 import { updateBusLocation, stopBusService } from '../services/firebase_service';
 import database from '@react-native-firebase/database';
+import auth from '@react-native-firebase/auth';
 import BackgroundJob from 'react-native-background-actions';
 import Geolocation from '@react-native-community/geolocation';
 
@@ -211,6 +212,17 @@ export const SendCoordinates = ({ driverDni }: Props) => {
         }
     };
 
+    const handleLogout = () => {
+        Alert.alert(
+            'Cerrar sesión',
+            '¿Está seguro de que desea cerrar sesión?',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                { text: 'Sí, cerrar sesión', style: 'destructive', onPress: () => auth().signOut() },
+            ]
+        );
+    };
+
     const stopProcess = async () => {
         sendLog("⏹️ Deteniendo proceso...");
         await BackgroundJob.stop();
@@ -218,11 +230,6 @@ export const SendCoordinates = ({ driverDni }: Props) => {
             await stopBusService(busId);
         }
         setIsSending(false);
-
-        sendLog("Cerrando sesión de Firebase...");
-        import('@react-native-firebase/auth').then(({ default: auth }) => {
-            auth().signOut();
-        });
     };
 
     return (
@@ -253,6 +260,15 @@ export const SendCoordinates = ({ driverDni }: Props) => {
             <View style={styles.buttons}>
                 {loadingAssignment ? (
                     <ActivityIndicator size="large" color="#2060cd" style={{ marginBottom: 20 }} />
+                ) : isSending ? (
+                    <>
+                        <Pressable
+                            onPress={stopProcess}
+                            style={[styles.btn, { backgroundColor: '#d32f2f' }]}
+                        >
+                            <Text style={styles.btnText}>⏹ DETENER RECORRIDO</Text>
+                        </Pressable>
+                    </>
                 ) : (
                     <>
                         {!busId && (
@@ -262,19 +278,17 @@ export const SendCoordinates = ({ driverDni }: Props) => {
                         )}
                         <Pressable
                             onPress={startProcess}
-                            style={[styles.btn, { backgroundColor: isSending || !busId ? '#888' : '#2060cd' }]}
-                            disabled={isSending || !busId}
+                            style={[styles.btn, { backgroundColor: !busId ? '#888' : '#2060cd' }]}
+                            disabled={!busId}
                         >
-                            <Text style={styles.btnText}>
-                                {isSending ? '🚌 TRANSMITIENDO...' : '🚀 INICIAR RECORRIDO'}
-                            </Text>
+                            <Text style={styles.btnText}>🚀 INICIAR RECORRIDO</Text>
                         </Pressable>
 
                         <Pressable
-                            onPress={stopProcess}
+                            onPress={handleLogout}
                             style={[styles.btn, { backgroundColor: '#d32f2f' }]}
                         >
-                            <Text style={styles.btnText}>⏹ DETENER TODO</Text>
+                            <Text style={styles.btnText}>🔒 Cerrar sesión</Text>
                         </Pressable>
                     </>
                 )}

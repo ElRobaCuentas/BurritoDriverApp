@@ -1,9 +1,10 @@
 import React from 'react';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AdminPanelScreen } from '../features/admin/screen/AdminPanelScreen';
 import { ChoferesScreen } from '../features/admin/screen/ChoferesScreen';
 import { BusesScreen } from '../features/admin/screen/BusesScreen';
 import { AsignacionesScreen } from '../features/admin/screen/AsignacionesScreen';
+import { COLORS } from '../shared/theme/colors';
 
 export type AdminStackParamList = {
   AdminPanelScreen: undefined;
@@ -12,41 +13,32 @@ export type AdminStackParamList = {
   AsignacionesScreen: undefined;
 };
 
-const Stack = createStackNavigator<AdminStackParamList>();
+const Stack = createNativeStackNavigator<AdminStackParamList>();
 
 export const AdminNavigator = () => {
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        headerStyle: {
-          backgroundColor: '#00AEEF',
-        },
-        headerTintColor: '#FFFFFF',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-        },
+        gestureEnabled: true,
+        contentStyle: { backgroundColor: COLORS.background },
       }}
     >
       <Stack.Screen
         name="AdminPanelScreen"
         component={AdminPanelScreen}
-        options={{ title: 'Panel de Control' }}
       />
       <Stack.Screen
         name="ChoferesScreen"
         component={ChoferesScreen}
-        options={{ title: 'Gestión de Choferes' }}
       />
       <Stack.Screen
         name="BusesScreen"
         component={BusesScreen}
-        options={{ title: 'Gestión de Flota' }}
       />
       <Stack.Screen
         name="AsignacionesScreen"
         component={AsignacionesScreen}
-        options={{ title: 'Asignaciones Diarias' }}
       />
     </Stack.Navigator>
   );

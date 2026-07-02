@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Alert, StyleSheet, ActivityIndicator } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { AdminService, Chofer, Bus, Asignacion } from '../services/admin_service';
+import { FloatingBackButton } from '../../../shared/components/FloatingBackButton';
 import { COLORS } from '../../../shared/theme/colors';
 import { TYPOGRAPHY } from '../../../shared/theme/typography';
 
 export const AsignacionesScreen = () => {
+  const navigation = useNavigation();
   const [choferes, setChoferes] = useState<Chofer[]>([]);
   const [buses, setBuses] = useState<Bus[]>([]);
   const [asignaciones, setAsignaciones] = useState<Asignacion[]>([]);
@@ -88,6 +91,8 @@ export const AsignacionesScreen = () => {
 
   return (
     <View style={styles.container}>
+      <FloatingBackButton onPress={() => navigation.goBack()} />
+      <Text style={styles.screenTitle}>Asignaciones Diarias</Text>
       {/* SECCIÓN CREAR */}
       <View style={styles.formContainer}>
         <Text style={styles.sectionTitle}>Turno de Hoy: {AdminService.getTodayDateString()}</Text>
@@ -153,6 +158,14 @@ export const AsignacionesScreen = () => {
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background },
   container: { flex: 1, backgroundColor: COLORS.background },
+  screenTitle: {
+    fontFamily: TYPOGRAPHY.primary.bold,
+    fontSize: 22,
+    color: COLORS.textTitle,
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 10,
+  },
   formContainer: { padding: 20, backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.secondary, marginBottom: 10 },
   sectionTitle: { fontFamily: TYPOGRAPHY.primary.semiBold, fontSize: 18, color: COLORS.textTitle, marginBottom: 15 },
   label: { fontFamily: TYPOGRAPHY.primary.bold, fontSize: 14, color: COLORS.primary, marginBottom: 8, marginTop: 10 },

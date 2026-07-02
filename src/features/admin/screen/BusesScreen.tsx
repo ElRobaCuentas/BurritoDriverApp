@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, Switch, Alert, StyleSheet, ActivityIndicator } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { AdminService, Bus } from '../services/admin_service';
+import { FloatingBackButton } from '../../../shared/components/FloatingBackButton';
 import { COLORS } from '../../../shared/theme/colors';
 import { TYPOGRAPHY } from '../../../shared/theme/typography';
 
 export const BusesScreen = () => {
+  const navigation = useNavigation();
   const [buses, setBuses] = useState<Bus[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -84,6 +87,8 @@ export const BusesScreen = () => {
 
   return (
     <View style={styles.container}>
+      <FloatingBackButton onPress={() => navigation.goBack()} />
+      <Text style={styles.screenTitle}>Gestión de Flota</Text>
       {/* SECCIÓN FORMULARIO */}
       <View style={styles.formContainer}>
         <Text style={styles.sectionTitle}>Registrar Nuevo Bus</Text>
@@ -156,6 +161,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  screenTitle: {
+    fontFamily: TYPOGRAPHY.primary.bold,
+    fontSize: 22,
+    color: COLORS.textTitle,
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 10,
   },
   formContainer: {
     padding: 20,

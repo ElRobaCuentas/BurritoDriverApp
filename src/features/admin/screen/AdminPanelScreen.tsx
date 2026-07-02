@@ -1,13 +1,13 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import auth from '@react-native-firebase/auth';
 import { AdminStackParamList } from '../../../navigation/AdminNavigator';
 import { COLORS } from '../../../shared/theme/colors';
 import { TYPOGRAPHY } from '../../../shared/theme/typography';
 
-type AdminPanelNavProp = StackNavigationProp<AdminStackParamList, 'AdminPanelScreen'>;
+type AdminPanelNavProp = NativeStackNavigationProp<AdminStackParamList, 'AdminPanelScreen'>;
 
 export const AdminPanelScreen = () => {
   const navigation = useNavigation<AdminPanelNavProp>();

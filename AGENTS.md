@@ -71,13 +71,14 @@ Para detalles: ARCHITECTURE.md y FIREBASE_SCHEMA.md.
 ```
 Login → fetchAssignment → startProcess → permisos Android
     → BackgroundJob.start → locationTask (watchPosition)
-    → updateBusLocation → stopProcess → isActive=false → signOut
+    → updateBusLocation → stopProcess → isActive=false
 ```
 
 Notas:
-- DETENER TODO es la única fuente de verdad para `isActive: false`.
+- DETENER RECORRIDO es la única fuente de verdad para `isActive: false`.
 - `locationTask` corre fuera de React. Errores allí son silenciosos.
-- `stopProcess` usa `import()` dinámico para hacer signOut.
+- `stopProcess` ya no cierra sesión. Cerrar sesión es una acción independiente
+  con confirmación mediante Alert.
 
 Para implementación detallada: ARCHITECTURE.md sección 8.
 
@@ -127,9 +128,13 @@ Impacta batería, precisión y frecuencia de actualización.
 Sin ella, el servicio arranca sin bus asignado y escribe a
 `/ubicacion_buses/null`.
 
-### 6.10 No cambiar `import()` dinámico en `stopProcess`
+### 6.10 Auth import estático en SendCoordinates
 
-Es deliberado. No cambiarlo a import estático.
+`SendCoordinates.tsx` importa `auth` de forma estática:
+`import auth from '@react-native-firebase/auth'`.
+El `import()` dinámico en `stopProcess` fue eliminado porque la
+separación del logout en un botón independiente requiere auth
+disponible en todo momento. No revertir a import dinámico.
 
 ### 6.11 No eliminar `keepAlive`
 
