@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ActivityIndicator, Alert,
-  KeyboardAvoidingView, Platform
+  KeyboardAvoidingView, Platform, ScrollView
 } from 'react-native';
 import auth from '@react-native-firebase/auth';
+import { COLORS } from '../shared/theme/colors';
+import { TYPOGRAPHY } from '../shared/theme/typography';
 
 export const LoginDriverScreen = () => {
   const [dni, setDni] = useState('');
@@ -23,7 +25,6 @@ export const LoginDriverScreen = () => {
 
     setLoading(true);
     try {
-      // Construimos el email dinámicamente como pide el requerimiento
       const email = `${dni.trim()}@burritodriver.com`;
       await auth().signInWithEmailAndPassword(email, password);
     } catch (error: any) {
@@ -50,69 +51,116 @@ export const LoginDriverScreen = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.container}
     >
-      <View style={styles.formContainer}>
-        <Text style={styles.title}>Oficina de Transportes</Text>
-        <Text style={styles.subtitle}>Portal del Conductor</Text>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.title}>
+          Acceso para conductores y administradores
+        </Text>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>DNI del Conductor</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ej. 12345678"
-            placeholderTextColor="#999"
-            keyboardType="numeric"
-            maxLength={12}
-            value={dni}
-            onChangeText={setDni}
-            autoCapitalize="none"
-          />
+        <View style={styles.formSection}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>DNI</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ej. 12345678"
+              placeholderTextColor="#999"
+              keyboardType="numeric"
+              maxLength={12}
+              value={dni}
+              onChangeText={setDni}
+              autoCapitalize="none"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Contraseña</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ingresa tu contraseña"
+              placeholderTextColor="#999"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+              autoCapitalize="none"
+            />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color={COLORS.white} />
+            ) : (
+              <Text style={styles.buttonText}>Entrar</Text>
+            )}
+          </TouchableOpacity>
         </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Contraseña</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="********"
-            placeholderTextColor="#999"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-            autoCapitalize="none"
-          />
-        </View>
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFF" />
-          ) : (
-            <Text style={styles.buttonText}>Entrar</Text>
-          )}
-        </TouchableOpacity>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F4F7F9', justifyContent: 'center' },
-  formContainer: { paddingHorizontal: 24 },
-  title: { fontSize: 26, fontWeight: 'bold', color: '#1A1A1A', textAlign: 'center' },
-  subtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 40, marginTop: 5 },
-  inputGroup: { marginBottom: 20 },
-  label: { fontSize: 13, color: '#333', marginBottom: 8, fontWeight: '600' },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingVertical: 40,
+  },
+  title: {
+    fontFamily: TYPOGRAPHY.primary.semiBold,
+    fontSize: 36,
+    color: COLORS.textTitle,
+    textAlign: 'center',
+    marginBottom: 40,
+  },
+  formSection: {},
+  inputGroup: {
+    marginBottom: 18,
+  },
+  label: {
+    fontFamily: TYPOGRAPHY.primary.medium,
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 8,
+  },
   input: {
-    backgroundColor: '#FFF', borderRadius: 12, paddingVertical: 14,
-    paddingHorizontal: 16, fontSize: 16, color: '#1A1A1A',
-    borderWidth: 1, borderColor: '#E5E5E5'
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: COLORS.textTitle,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    fontFamily: TYPOGRAPHY.primary.regular,
   },
   button: {
-    backgroundColor: '#00AEEF', borderRadius: 12, paddingVertical: 16,
-    alignItems: 'center', marginTop: 10, elevation: 2
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 6,
+    elevation: 2,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
   },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' }
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  buttonText: {
+    color: COLORS.white,
+    fontFamily: TYPOGRAPHY.primary.bold,
+    fontSize: 16,
+  },
 });
