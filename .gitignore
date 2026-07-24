@@ -66,6 +66,10 @@ yarn-error.log
 # testing
 /coverage
 
+# Diagnostic artifacts
+$null
+rnconfig*.json
+
 # Yarn
 .yarn/*
 !.yarn/patches
