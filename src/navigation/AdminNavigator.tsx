@@ -1,10 +1,9 @@
 import React from 'react';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createStackNavigator } from '@react-navigation/stack';
 import { AdminPanelScreen } from '../features/admin/screen/AdminPanelScreen';
 import { ChoferesScreen } from '../features/admin/screen/ChoferesScreen';
 import { BusesScreen } from '../features/admin/screen/BusesScreen';
 import { AsignacionesScreen } from '../features/admin/screen/AsignacionesScreen';
-import { COLORS } from '../shared/theme/colors';
 
 export type AdminStackParamList = {
   AdminPanelScreen: undefined;
@@ -13,15 +12,14 @@ export type AdminStackParamList = {
   AsignacionesScreen: undefined;
 };
 
-const Stack = createNativeStackNavigator<AdminStackParamList>();
+const Stack = createStackNavigator<AdminStackParamList>();
 
 export const AdminNavigator = () => {
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        gestureEnabled: true,
-        contentStyle: { backgroundColor: COLORS.background },
+        animation: 'none',
       }}
     >
       <Stack.Screen

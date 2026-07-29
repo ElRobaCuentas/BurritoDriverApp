@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     AppState, PermissionsAndroid, Platform,
     Pressable, StyleSheet, Text, View, ScrollView,
@@ -10,6 +10,8 @@ import database from '@react-native-firebase/database';
 import auth from '@react-native-firebase/auth';
 import BackgroundJob from 'react-native-background-actions';
 import Geolocation from '@react-native-community/geolocation';
+import { COLORS } from '../shared/theme/colors';
+import { TYPOGRAPHY } from '../shared/theme/typography';
 
 interface Props {
     driverDni: string;
@@ -113,12 +115,13 @@ const requestAllPermissions = async (): Promise<boolean> => {
 export const SendCoordinates = ({ driverDni }: Props) => {
     const [isSending, setIsSending] = useState(false);
     const [logs, setLogs] = useState<any[]>([]);
-    const scrollRef = useRef<ScrollView>(null);
     
     // T11: Nuevos estados para la auto-asignación
     const [busId, setBusId] = useState<string | null>(null);
     const [asignacionId, setAsignacionId] = useState<string | null>(null);
     const [loadingAssignment, setLoadingAssignment] = useState(true);
+
+    const [showDebug, setShowDebug] = useState(true);
 
     useEffect(() => {
         const logSubscription = DeviceEventEmitter.addListener('PRO_DEBUG_LOG', (newLog) => {
@@ -234,86 +237,339 @@ export const SendCoordinates = ({ driverDni }: Props) => {
 
     return (
         <View style={styles.container}>
-            <Text style={styles.mainTitle}>🔥 PANTALLA DE TRACKING 🔥</Text>
-            <Text style={{ textAlign: 'center', color: '#555', fontSize: 11 }}>DNI Conductor: {driverDni}</Text>
-
-            <View style={styles.console}>
-                <Text style={styles.consoleTitle}> TERMINAL DE EVENTOS </Text>
-                <ScrollView
-                    ref={scrollRef}
-                    onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-                    style={styles.scroll}
-                >
-                    {logs.map(log => (
-                        <Text key={log.id} style={[
-                            styles.logLine,
-                            log.type === 'error'   ? { color: '#cc0000' } :
-                            log.type === 'success' ? { color: '#008800' } :
-                                                     { color: '#000000' }
-                        ]}>
-                            {log.t}
-                        </Text>
-                    ))}
-                </ScrollView>
-            </View>
-
-            <View style={styles.buttons}>
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+            >
                 {loadingAssignment ? (
-                    <ActivityIndicator size="large" color="#2060cd" style={{ marginBottom: 20 }} />
-                ) : isSending ? (
-                    <>
-                        <Pressable
-                            onPress={stopProcess}
-                            style={[styles.btn, { backgroundColor: '#d32f2f' }]}
-                        >
-                            <Text style={styles.btnText}>⏹ DETENER RECORRIDO</Text>
-                        </Pressable>
-                    </>
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color={COLORS.primary} />
+                        <Text style={styles.loadingText}>Cargando asignación...</Text>
+                    </View>
                 ) : (
                     <>
-                        {!busId && (
+                        <View style={styles.statusSection}>
+                            <View style={[styles.statusDot, isSending ? styles.statusDotActive : styles.statusDotInactive]} />
+                            <Text style={[styles.statusText, isSending ? styles.statusTextActive : styles.statusTextInactive]}>
+                                {isSending ? 'Compartiendo ubicación' : 'Detenido'}
+                            </Text>
+                        </View>
+
+                        <View style={styles.infoCard}>
+                            <View style={styles.cardHeader}>
+                                <Text style={styles.cardTitle}>Información del viaje</Text>
+                            </View>
+                            <View style={styles.infoRow}>
+                                <Text style={styles.infoLabel}>Conductor asignado</Text>
+                                <Text style={styles.infoValue}>{driverDni}</Text>
+                            </View>
+                            <View style={styles.divider} />
+                            <View style={styles.infoRow}>
+                                <Text style={styles.infoLabel}>Vehículo asignado</Text>
+                                <Text style={[styles.infoValue, !busId && styles.infoValueMuted]}>
+                                    {busId || 'Sin asignación'}
+                                </Text>
+                            </View>
+                        </View>
+
+                        {!busId && !isSending && (
                             <Text style={styles.errorText}>
-                                ⚠️ No tienes un bus asignado para hoy. Contacta a la oficina.
+                                No tienes un bus asignado para hoy. Contacta a la oficina.
                             </Text>
                         )}
-                        <Pressable
-                            onPress={startProcess}
-                            style={[styles.btn, { backgroundColor: !busId ? '#888' : '#2060cd' }]}
-                            disabled={!busId}
-                        >
-                            <Text style={styles.btnText}>🚀 INICIAR RECORRIDO</Text>
-                        </Pressable>
 
-                        <Pressable
-                            onPress={handleLogout}
-                            style={[styles.btn, { backgroundColor: '#d32f2f' }]}
-                        >
-                            <Text style={styles.btnText}>🔒 Cerrar sesión</Text>
-                        </Pressable>
+                        {isSending ? (
+                            <Pressable
+                                onPress={stopProcess}
+                                style={styles.btnStop}
+                            >
+                                <Text style={styles.btnText}>DETENER RECORRIDO</Text>
+                            </Pressable>
+                        ) : (
+                            <>
+                                <Pressable
+                                    onPress={startProcess}
+                                    style={[styles.btnStart, !busId && styles.btnDisabled]}
+                                    disabled={!busId}
+                                >
+                                    <Text style={styles.btnText}>INICIAR RECORRIDO</Text>
+                                </Pressable>
+
+                                <Pressable
+                                    onPress={handleLogout}
+                                    style={styles.btnLogout}
+                                >
+                                    <Text style={styles.btnText}>CERRAR SESIÓN</Text>
+                                </Pressable>
+                            </>
+                        )}
+
+                        <View style={styles.debugSection}>
+                            <View style={styles.debugCard}>
+                                <View style={styles.debugCardHeader}>
+                                    <Text style={styles.debugTitle}>Diagnóstico técnico</Text>
+                                    <Text style={styles.debugSubtitle}>
+                                        Información utilizada durante la fase de validación del sistema.
+                                    </Text>
+                                </View>
+
+                                <Pressable
+                                    onPress={() => setShowDebug(!showDebug)}
+                                    style={styles.debugToggle}
+                                >
+                                    <Text style={styles.debugToggleText}>
+                                        {showDebug ? '▲ Ocultar diagnóstico' : '▼ Mostrar diagnóstico'}
+                                    </Text>
+                                </Pressable>
+
+                                {showDebug && (
+                                    <View style={styles.debugContainer}>
+                                        {logs.map(log => (
+                                            <View key={log.id} style={[
+                                                styles.logEntry,
+                                                log.type === 'error'   ? styles.logEntryError :
+                                                log.type === 'success' ? styles.logEntrySuccess :
+                                                                         styles.logEntryInfo
+                                            ]}>
+                                                <Text style={[
+                                                    styles.logText,
+                                                    log.type === 'error'   ? styles.logTextError :
+                                                    log.type === 'success' ? styles.logTextSuccess :
+                                                                             styles.logTextInfo
+                                                ]}>
+                                                    {log.t}
+                                                </Text>
+                                            </View>
+                                        ))}
+                                    </View>
+                                )}
+                            </View>
+                        </View>
                     </>
                 )}
-            </View>
+            </ScrollView>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
-    container:    { flex: 1, backgroundColor: '#FFFFFF' },
-    mainTitle:    { fontSize: 20, fontWeight: 'bold', color: '#000', textAlign: 'center', marginTop: 20 },
-    console: {
+    container: {
         flex: 1,
-        backgroundColor: '#F5F5F5',
-        margin: 15,
-        padding: 10,
-        borderWidth: 4,
-        borderColor: '#2060cd',
-        borderRadius: 5,
+        backgroundColor: COLORS.background,
     },
-    consoleTitle: { color: '#000', fontSize: 14, fontWeight: 'bold', marginBottom: 5, borderBottomWidth: 1, borderBottomColor: '#CCC' },
-    scroll:       { flex: 1 },
-    logLine:      { fontFamily: 'monospace', fontSize: 12, marginBottom: 4 },
-    buttons:      { padding: 20 },
-    btn:          { padding: 20, borderRadius: 10, marginBottom: 10, alignItems: 'center', elevation: 5 },
-    btnText:      { color: 'white', fontWeight: 'bold', fontSize: 16 },
-    errorText:    { color: '#d32f2f', textAlign: 'center', marginBottom: 10, fontWeight: 'bold', fontSize: 13 }
+    scrollContent: {
+        flexGrow: 1,
+        paddingHorizontal: 24,
+        paddingVertical: 32,
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        marginTop: 12,
+        fontFamily: TYPOGRAPHY.primary.medium,
+        fontSize: 15,
+        color: '#888',
+    },
+    statusSection: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 28,
+    },
+    statusDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        marginRight: 8,
+    },
+    statusDotActive: {
+        backgroundColor: '#2E7D32',
+    },
+    statusDotInactive: {
+        backgroundColor: '#999',
+    },
+    statusText: {
+        fontFamily: TYPOGRAPHY.primary.semiBold,
+        fontSize: 18,
+    },
+    statusTextActive: {
+        color: '#2E7D32',
+    },
+    statusTextInactive: {
+        color: '#999',
+    },
+    infoCard: {
+        backgroundColor: COLORS.background,
+        borderRadius: 14,
+        padding: 18,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: '#E8E8E8',
+        elevation: 1,
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 3,
+    },
+    cardHeader: {
+        marginBottom: 12,
+        paddingBottom: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#E8E8E8',
+    },
+    cardTitle: {
+        fontFamily: TYPOGRAPHY.primary.semiBold,
+        fontSize: 15,
+        color: COLORS.textTitle,
+    },
+    infoRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 8,
+    },
+    infoLabel: {
+        fontFamily: TYPOGRAPHY.primary.medium,
+        fontSize: 13,
+        color: '#999',
+    },
+    infoValue: {
+        fontFamily: TYPOGRAPHY.primary.semiBold,
+        fontSize: 15,
+        color: COLORS.textTitle,
+    },
+    infoValueMuted: {
+        color: '#999',
+        fontFamily: TYPOGRAPHY.primary.regular,
+    },
+    divider: {
+        height: 1,
+        backgroundColor: '#F0F0F0',
+        marginVertical: 2,
+    },
+    errorText: {
+        color: '#d32f2f',
+        textAlign: 'center',
+        marginBottom: 16,
+        fontFamily: TYPOGRAPHY.primary.medium,
+        fontSize: 13,
+        lineHeight: 18,
+    },
+    btnStart: {
+        backgroundColor: COLORS.primary,
+        borderRadius: 12,
+        paddingVertical: 16,
+        alignItems: 'center',
+        marginBottom: 12,
+        elevation: 2,
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 4,
+    },
+    btnStop: {
+        backgroundColor: '#d32f2f',
+        borderRadius: 12,
+        paddingVertical: 16,
+        alignItems: 'center',
+        marginBottom: 12,
+        elevation: 2,
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 4,
+    },
+    btnLogout: {
+        backgroundColor: '#d32f2f',
+        borderRadius: 12,
+        paddingVertical: 14,
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    btnDisabled: {
+        opacity: 0.5,
+    },
+    btnText: {
+        color: COLORS.white,
+        fontFamily: TYPOGRAPHY.primary.bold,
+        fontSize: 16,
+    },
+    debugSection: {
+        marginTop: 12,
+    },
+    debugCard: {
+        backgroundColor: COLORS.background,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: '#E8E8E8',
+        overflow: 'hidden',
+        elevation: 1,
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 3,
+    },
+    debugCardHeader: {
+        padding: 16,
+        paddingBottom: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F5F5F5',
+    },
+    debugTitle: {
+        fontFamily: TYPOGRAPHY.primary.semiBold,
+        fontSize: 14,
+        color: COLORS.textTitle,
+        marginBottom: 4,
+    },
+    debugSubtitle: {
+        fontFamily: TYPOGRAPHY.primary.regular,
+        fontSize: 11,
+        color: '#999',
+        lineHeight: 16,
+    },
+    debugToggle: {
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        alignItems: 'center',
+    },
+    debugToggleText: {
+        fontFamily: TYPOGRAPHY.primary.medium,
+        fontSize: 12,
+        color: '#888',
+    },
+    debugContainer: {
+        paddingHorizontal: 12,
+        paddingBottom: 12,
+    },
+    logEntry: {
+        paddingVertical: 4,
+        paddingHorizontal: 10,
+        borderRadius: 6,
+        marginBottom: 3,
+    },
+    logEntryInfo: {
+        backgroundColor: '#F8F9FA',
+    },
+    logEntrySuccess: {
+        backgroundColor: '#F0FFF4',
+    },
+    logEntryError: {
+        backgroundColor: '#FFF5F5',
+    },
+    logText: {
+        fontFamily: 'monospace',
+        fontSize: 11,
+    },
+    logTextInfo: {
+        color: '#555',
+    },
+    logTextSuccess: {
+        color: '#2E7D32',
+    },
+    logTextError: {
+        color: '#C62828',
+    },
 });

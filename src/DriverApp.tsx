@@ -13,6 +13,7 @@ export const DriverApp = () => {
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isCheckingRole, setIsCheckingRole] = useState(false);
 
   useEffect(() => {
     const subscriber = auth().onAuthStateChanged((currentUser) => {
@@ -23,10 +24,15 @@ export const DriverApp = () => {
 
   useEffect(() => {
     if (user) {
-      existeAdministrador(user.uid).then((admin) => {
-        setIsAdmin(admin);
-        setInitializing(false);
-      });
+      setIsCheckingRole(true);
+      existeAdministrador(user.uid)
+        .then((admin) => {
+          setIsAdmin(admin);
+          setInitializing(false);
+        })
+        .finally(() => {
+          setIsCheckingRole(false);
+        });
     } else {
       setIsAdmin(false);
       setInitializing(false);
@@ -48,6 +54,14 @@ export const DriverApp = () => {
           <LoginDriverScreen />
         </SafeAreaView>
       </SafeAreaProvider>
+    );
+  }
+
+  if (isCheckingRole) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#00AEEF" />
+      </View>
     );
   }
 
