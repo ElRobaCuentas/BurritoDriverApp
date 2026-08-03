@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     AppState, PermissionsAndroid, Platform,
     Pressable, StyleSheet, Text, View, ScrollView,
@@ -26,6 +26,10 @@ const sendLog = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
     });
 };
 
+// C3: Constantes del watchdog de reinicio automático
+const PULSE_TIMEOUT_MS = 30000;
+const WATCHDOG_INTERVAL_MS = 10000;
+
 const locationTask = async (taskDataArguments: any) => {
     // T11: Rescatamos también el busId inyectado
     const { uidChofer, busId } = taskDataArguments; 
@@ -35,6 +39,8 @@ const locationTask = async (taskDataArguments: any) => {
         const watchId = Geolocation.watchPosition(
             async (position) => {
                 const { latitude, longitude, heading, speed } = position.coords;
+                // C3: Pulso de vida hacia la UI (mismo canal que el debug panel)
+                DeviceEventEmitter.emit('PRO_LOCATION_PULSE', { ts: Date.now() });
                 sendLog(`✅ POSICIÓN: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, "success");
 
                 try {
@@ -116,6 +122,11 @@ export const SendCoordinates = ({ driverDni }: Props) => {
     const [isSending, setIsSending] = useState(false);
     const [logs, setLogs] = useState<any[]>([]);
     
+    // C3: Estado del watchdog de reinicio automático
+    const lastPulseRef = useRef(0);
+    const isRestartingRef = useRef(false);
+    const [recoveryFailed, setRecoveryFailed] = useState(false);
+    
     // T11: Nuevos estados para la auto-asignación
     const [busId, setBusId] = useState<string | null>(null);
     const [asignacionId, setAsignacionId] = useState<string | null>(null);
@@ -127,6 +138,11 @@ export const SendCoordinates = ({ driverDni }: Props) => {
     useEffect(() => {
         const logSubscription = DeviceEventEmitter.addListener('PRO_DEBUG_LOG', (newLog) => {
             setLogs(prev => [...prev, newLog].slice(-30));
+        });
+
+        // C3: La UI escucha el pulso del motor para conocer la última posición enviada
+        const pulseSubscription = DeviceEventEmitter.addListener('PRO_LOCATION_PULSE', (payload: { ts: number }) => {
+            lastPulseRef.current = payload.ts;
         });
 
         const appStateSub = AppState.addEventListener('change', (state) => {
@@ -202,9 +218,60 @@ export const SendCoordinates = ({ driverDni }: Props) => {
 
         return () => {
             logSubscription.remove();
+            pulseSubscription.remove();
             appStateSub.remove();
         };
     }, [driverDni]);
+
+    // C3: Arranca el BackgroundJob (usado por INICIAR y por el reinicio automático)
+    const startBackgroundJob = useCallback(async () => {
+        if (!busId) return;
+        lastPulseRef.current = Date.now();
+        // T11: Inyectamos el driverDni y el busId al servicio
+        const options = getBackgroundOptions(driverDni, busId);
+        await BackgroundJob.start(locationTask, options);
+        setIsSending(true);
+        setRecoveryFailed(false);
+        sendLog(`✅ MOTOR ACTIVO — Transmitiendo para ${busId}`, "success");
+    }, [busId, driverDni]);
+
+    // C3: Detecta que el motor se detuvo en silencio y lo reinicia
+    const restartBackgroundJob = useCallback(async () => {
+        if (isRestartingRef.current) return;
+        isRestartingRef.current = true;
+        sendLog("⚠️ Motor sin pulsos: intentando reiniciar el servicio...", "error");
+        try {
+            await BackgroundJob.stop();
+        } catch (e: any) {
+            sendLog(`❌ Error deteniendo servicio previo: ${e.message}`, "error");
+        }
+        try {
+            await startBackgroundJob();
+            sendLog("🔄 SERVICIO REINICIADO", "success");
+        } catch (e: any) {
+            sendLog(`❌ NO SE PUDO REINICIAR: ${e.message}`, "error");
+            setIsSending(false);
+            setRecoveryFailed(true);
+            Alert.alert(
+                "Tracking detenido",
+                "El envío de ubicación se detuvo y no pudo recuperarse automáticamente. Presiona INICIAR para reintentar."
+            );
+        } finally {
+            isRestartingRef.current = false;
+        }
+    }, [startBackgroundJob]);
+
+    // C3: Watchdog que vigila los pulsos del motor mientras el recorrido está activo
+    useEffect(() => {
+        if (!isSending) return;
+        const watchdog = setInterval(() => {
+            if (isRestartingRef.current) return;
+            if (Date.now() - lastPulseRef.current > PULSE_TIMEOUT_MS) {
+                restartBackgroundJob();
+            }
+        }, WATCHDOG_INTERVAL_MS);
+        return () => clearInterval(watchdog);
+    }, [isSending, restartBackgroundJob]);
 
     const startProcess = async () => {
         if (!busId) {
@@ -222,13 +289,7 @@ export const SendCoordinates = ({ driverDni }: Props) => {
             if (!permisosOk) return;
 
             sendLog("⚙️ Arrancando Background Service...");
-            // T11: Inyectamos el driverDni y el busId al servicio
-            const options = getBackgroundOptions(driverDni, busId);
-            await BackgroundJob.start(locationTask, options);
-            
-            setIsSending(true);
-            sendLog(`✅ MOTOR ACTIVO — Transmitiendo para ${busId}`, "success");
-
+            await startBackgroundJob();
         } catch (e: any) {
             sendLog(`❌ CRASH UI: ${e.message}`, "error");
         }
@@ -294,6 +355,12 @@ export const SendCoordinates = ({ driverDni }: Props) => {
                         {!busId && !isSending && (
                             <Text style={styles.errorText}>
                                 No tienes un bus asignado para hoy. Contacta a la oficina.
+                            </Text>
+                        )}
+
+                        {recoveryFailed && (
+                            <Text style={styles.errorText}>
+                                El envío de ubicación se detuvo y no pudo recuperarse automáticamente. Presiona INICIAR para reintentar.
                             </Text>
                         )}
 

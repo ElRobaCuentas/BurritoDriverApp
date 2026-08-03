@@ -136,9 +136,14 @@ El `import()` dinámico en `stopProcess` fue eliminado porque la
 separación del logout en un botón independiente requiere auth
 disponible en todo momento. No revertir a import dinámico.
 
-### 6.11 No eliminar `keepAlive`
+### 6.11 No eliminar `keepAlive` ni el watchdog de C3
 
-Vigila que el BackgroundJob siga corriendo y limpia recursos si no.
+`keepAlive` vigila que el BackgroundJob siga corriendo y limpia
+recursos si no. El watchdog (C3) detecta la muerte silenciosa del
+servicio: si pasan 30s sin pulso `PRO_LOCATION_PULSE`, detiene e
+intenta reiniciar el servicio; si el reinicio falla, detiene la
+UI de tracking y avisa al conductor (Alert + banner). Ambos son la
+red de seguridad del tracking. No alterar sin pasar por el backlog.
 
 ### 6.12 No agregar cola de reintentos
 
