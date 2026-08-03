@@ -120,6 +120,7 @@ export const SendCoordinates = ({ driverDni }: Props) => {
     const [busId, setBusId] = useState<string | null>(null);
     const [asignacionId, setAsignacionId] = useState<string | null>(null);
     const [loadingAssignment, setLoadingAssignment] = useState(true);
+    const [driverName, setDriverName] = useState<string | null>(null);
 
     const [showDebug, setShowDebug] = useState(true);
 
@@ -142,6 +143,24 @@ export const SendCoordinates = ({ driverDni }: Props) => {
                 const day = String(d.getDate()).padStart(2, '0');
                 const today = `${year}-${month}-${day}`;
                 
+                try {
+                    const choferSnapshot = await database()
+                        .ref(`/choferes/${driverDni}`)
+                        .once('value');
+                    if (choferSnapshot.exists()) {
+                        const chofer = choferSnapshot.val();
+                        const fullName = `${chofer.nombre} ${chofer.apellidos}`.trim();
+                        setDriverName(fullName);
+                        sendLog(`👤 Conductor identificado: ${fullName}`, "success");
+                    } else {
+                        setDriverName(null);
+                        sendLog(`⚠️ Sin registro en choferes, se usará el DNI (${driverDni})`, "error");
+                    }
+                } catch (err: any) {
+                    setDriverName(null);
+                    sendLog(`❌ Error consultando nombre del conductor: ${err.message}`, "error");
+                }
+
                 sendLog(`Buscando asignación para hoy (${today})...`);
 
                 // Filtro en la nube gracias a la nueva regla indexOn
@@ -261,7 +280,7 @@ export const SendCoordinates = ({ driverDni }: Props) => {
                             </View>
                             <View style={styles.infoRow}>
                                 <Text style={styles.infoLabel}>Conductor asignado</Text>
-                                <Text style={styles.infoValue}>{driverDni}</Text>
+                                <Text style={styles.infoValue}>{driverName || driverDni}</Text>
                             </View>
                             <View style={styles.divider} />
                             <View style={styles.infoRow}>

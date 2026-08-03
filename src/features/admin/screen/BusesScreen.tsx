@@ -88,7 +88,7 @@ export const BusesScreen = () => {
   return (
     <View style={styles.container}>
       <FloatingBackButton onPress={() => navigation.goBack()} />
-      <Text style={styles.screenTitle}>Gestión de Flota</Text>
+      <Text style={styles.screenTitle}>Gestión de Buses</Text>
       {/* SECCIÓN FORMULARIO */}
       <View style={styles.formContainer}>
         <Text style={styles.sectionTitle}>Registrar Nuevo Bus</Text>

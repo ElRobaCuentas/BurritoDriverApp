@@ -30,9 +30,9 @@ export const AdminPanelScreen = () => {
           style={styles.menuButton}
           onPress={() => navigation.navigate('ChoferesScreen')}
         >
-          <Text style={styles.buttonEmoji}>🚌</Text>
+          {/* <Text style={styles.buttonEmoji}>🚌</Text> */}
           <View style={styles.buttonTextContainer}>
-            <Text style={styles.buttonTitle}>Gestión de Choferes</Text>
+            <Text style={styles.buttonTitle}>Gestión de choferes</Text>
             <Text style={styles.buttonDescription}>Registrar, activar y desactivar conductores</Text>
           </View>
         </TouchableOpacity>
@@ -42,9 +42,9 @@ export const AdminPanelScreen = () => {
           style={styles.menuButton}
           onPress={() => navigation.navigate('BusesScreen')}
         >
-          <Text style={styles.buttonEmoji}>🚐</Text>
+          {/* <Text style={styles.buttonEmoji}>🚐</Text> */}
           <View style={styles.buttonTextContainer}>
-            <Text style={styles.buttonTitle}>Gestión de Flota (Buses)</Text>
+            <Text style={styles.buttonTitle}>Gestión de buses</Text>
             <Text style={styles.buttonDescription}>Registrar placas, modelos y estado de los vehículos</Text>
           </View>
         </TouchableOpacity>
@@ -54,9 +54,9 @@ export const AdminPanelScreen = () => {
           style={styles.menuButton}
           onPress={() => navigation.navigate('AsignacionesScreen')}
         >
-          <Text style={styles.buttonEmoji}>📋</Text>
+          {/* <Text style={styles.buttonEmoji}>📋</Text> */}
           <View style={styles.buttonTextContainer}>
-            <Text style={styles.buttonTitle}>Asignaciones Diarias</Text>
+            <Text style={styles.buttonTitle}>Asignaciones diarias</Text>
             <Text style={styles.buttonDescription}>Vincular conductores con vehículos para el turno de hoy</Text>
           </View>
         </TouchableOpacity>
