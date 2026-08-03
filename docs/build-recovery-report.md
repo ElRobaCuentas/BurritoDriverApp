@@ -42,7 +42,7 @@ C:\ProyectosMovil\
 ├── docs/                    ← Documentación general del ecosistema
 ├── .opencode/               ← Configuración de OpenCode
 ├── Documentación_Oficial.docx
-├── FLUJO DE TRABAJO.txt
+├── FLUJO_DE_TRABAJO.md
 ├── IDEAS.txt
 ├── PLAN_MIGRACION_DRIVER_APP.txt
 └── TAREAS.txt
