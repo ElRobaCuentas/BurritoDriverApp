@@ -152,6 +152,19 @@ export const SendCoordinates = ({ driverDni }: Props) => {
             sendLog(`📱 APP STATE: ${state.toUpperCase()}`);
         });
 
+        // C4.7: Al re-montar, si el servicio sigue activo se restaura el estado visual.
+        // Va después de los listeners (para que sendLog funcione) y antes de
+        // fetchAssignment() porque únicamente restaura el estado del motor: no depende
+        // de Firebase ni modifica la asignación. isRunning() conserva true cuando el
+        // proceso y el singleton JS sobrevivieron al cierre de la app.
+        if (BackgroundJob.isRunning()) {
+            setLogs([]);
+            lastPulseRef.current = Date.now();
+            setRecoveryFailed(false);
+            setIsSending(true);
+            sendLog("ℹ️ Recorrido restaurado: el servicio seguía activo en segundo plano", "success");
+        }
+
         // T11: Consulta Dinámica Oficial en la Nube con Filtros
         const fetchAssignment = async () => {
             try {
