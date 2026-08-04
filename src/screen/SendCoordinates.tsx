@@ -126,6 +126,9 @@ export const SendCoordinates = ({ driverDni }: Props) => {
     const lastPulseRef = useRef(0);
     const isRestartingRef = useRef(false);
     const [recoveryFailed, setRecoveryFailed] = useState(false);
+
+    // C4.2: Evita que stopProcess se ejecute en paralelo (doble toque o watchdog)
+    const isStoppingRef = useRef(false);
     
     // T11: Nuevos estados para la auto-asignación
     const [busId, setBusId] = useState<string | null>(null);
@@ -307,12 +310,26 @@ export const SendCoordinates = ({ driverDni }: Props) => {
     };
 
     const stopProcess = async () => {
+        if (isStoppingRef.current) return;
+        isStoppingRef.current = true;
         sendLog("⏹️ Deteniendo proceso...");
-        await BackgroundJob.stop();
-        if (busId) {
-            await stopBusService(busId);
+        try {
+            try {
+                await BackgroundJob.stop();
+            } catch (e: any) {
+                sendLog(`⚠️ Error deteniendo servicio: ${e.message}`, "error");
+            }
+            if (busId) {
+                const ok = await stopBusService(busId);
+                if (!ok) {
+                    sendLog("❌ No se pudo marcar isActive:false en RTDB", "error");
+                }
+            }
+            sendLog("🛑 Proceso detenido", "success");
+        } finally {
+            setIsSending(false);
+            isStoppingRef.current = false;
         }
-        setIsSending(false);
     };
 
     return (
