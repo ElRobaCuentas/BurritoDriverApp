@@ -12,6 +12,7 @@ import BackgroundJob from 'react-native-background-actions';
 import Geolocation from '@react-native-community/geolocation';
 import { COLORS } from '../shared/theme/colors';
 import { TYPOGRAPHY } from '../shared/theme/typography';
+import { pause, withTimeout } from '../shared/utils/timeout';
 
 interface Props {
     driverDni: string;
@@ -29,6 +30,12 @@ const sendLog = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
 // C3: Constantes del watchdog de reinicio automático
 const PULSE_TIMEOUT_MS = 30000;
 const WATCHDOG_INTERVAL_MS = 10000;
+
+// C4.3: Timeout y reintentos al cargar la asignación.
+// El timeout cubre el intento COMPLETO (lectura de chofer + lectura de asignación).
+const ASSIGNMENT_TIMEOUT_MS = 10000;
+const ASSIGNMENT_RETRIES = 2;
+const ASSIGNMENT_RETRY_PAUSE_MS = 1500;
 
 const locationTask = async (taskDataArguments: any) => {
     // T11: Rescatamos también el busId inyectado
@@ -136,7 +143,111 @@ export const SendCoordinates = ({ driverDni }: Props) => {
     const [loadingAssignment, setLoadingAssignment] = useState(true);
     const [driverName, setDriverName] = useState<string | null>(null);
 
+    // C4.3: Estados y guards de la carga de asignación
+    const [assignmentError, setAssignmentError] = useState(false);
+    const [retrying, setRetrying] = useState(false);
+    const fetchGenRef = useRef(0);
+    const isLoadingAssignmentRef = useRef(false);
+
     const [showDebug, setShowDebug] = useState(true);
+
+    // C4.3: Carga de la asignación con timeout por intento completo y reintento acotado.
+    // Cada i ntento corre dentro de ASSIGNMENT_TIMEOUT_MS y cubre ambas lecturas de Firebase
+    // (chofer + asignación) con un solo reloj. El guard de generación (fetchGenRef) ignora
+    // respuestas tardías de un intento vencido para que no sobrescriban un ciclo más nuevo
+    // (Promise.race no cancela la consulta, solo deja de esperarla).
+    const loadAssignment = useCallback(async () => {
+        if (isLoadingAssignmentRef.current) return;
+        isLoadingAssignmentRef.current = true;
+        const gen = ++fetchGenRef.current;
+        setLoadingAssignment(true);
+        setAssignmentError(false);
+        setRetrying(false);
+        try {
+            for (let intento = 1; intento <= ASSIGNMENT_RETRIES; intento++) {
+                if (gen !== fetchGenRef.current) return;
+                if (intento > 1) {
+                    setRetrying(true);
+                    sendLog(`⚠️ Problemas de conexión, reintentando (${intento}/${ASSIGNMENT_RETRIES})...`, "error");
+                    await pause(ASSIGNMENT_RETRY_PAUSE_MS);
+                    if (gen !== fetchGenRef.current) return;
+                }
+                try {
+                    const r = await withTimeout((async () => {
+                        const d = new Date();
+                        const year = d.getFullYear();
+                        const month = String(d.getMonth() + 1).padStart(2, '0');
+                        const day = String(d.getDate()).padStart(2, '0');
+                        const today = `${year}-${month}-${day}`;
+
+                        let name: string | null = null;
+                        try {
+                            const choferSnapshot = await database().ref(`/choferes/${driverDni}`).once('value');
+                            if (choferSnapshot.exists()) {
+                                const chofer = choferSnapshot.val();
+                                name = `${chofer.nombre} ${chofer.apellidos}`.trim();
+                            }
+                        } catch (e: any) {
+                            // El nombre es opcional: su fallo no debe tumbar el intento.
+                            // Se loguea solo si este intento sigue siendo el actual.
+                            if (gen === fetchGenRef.current) {
+                                sendLog(`❌ Error consultando nombre del conductor: ${e.message}`, "error");
+                            }
+                        }
+
+                        const snapshot = await database().ref('/asignaciones')
+                            .orderByChild('choferId')
+                            .equalTo(driverDni)
+                            .once('value');
+
+                        let foundBusId: string | null = null;
+                        let foundAsignacionId: string | null = null;
+                        if (snapshot.exists()) {
+                            snapshot.forEach((child) => {
+                                const val = child.val();
+                                if (val.fecha === today && val.activo === true) {
+                                    foundBusId = val.busId;
+                                    foundAsignacionId = child.key;
+                                }
+                                return undefined;
+                            });
+                        }
+                        return { name, foundBusId, foundAsignacionId };
+                    })(), ASSIGNMENT_TIMEOUT_MS);
+
+                    if (gen !== fetchGenRef.current) return;
+                    // Resultado aplicado solo si seguimos siendo la generación actual
+                    setDriverName(r.name);
+                    if (r.name) {
+                        sendLog(`👤 Conductor identificado: ${r.name}`, "success");
+                    } else {
+                        sendLog(`⚠️ Sin registro en choferes, se usará el DNI (${driverDni})`, "error");
+                    }
+                    setBusId(r.foundBusId);
+                    setAsignacionId(r.foundAsignacionId);
+                    if (r.foundBusId) {
+                        sendLog(`🚌 Bus asignado: ${r.foundBusId}`, "success");
+                    } else {
+                        // Resultado válido: Firebase respondió y no hay asignación. No se reintenta.
+                        sendLog(`❌ No hay asignación para hoy.`, "error");
+                    }
+                    setLoadingAssignment(false);
+                    return;
+                } catch (e: any) {
+                    if (gen !== fetchGenRef.current) return;
+                    sendLog(`❌ Intento ${intento}/${ASSIGNMENT_RETRIES} falló: ${e.message}`, "error");
+                }
+            }
+            if (gen !== fetchGenRef.current) return;
+            // Se agotaron los reintentos: salir del spinner y mostrar la tarjeta de error
+            setLoadingAssignment(false);
+            setAssignmentError(true);
+        } finally {
+            // Regla del equipo: liberar el guard en TODOS los caminos (éxito, timeout,
+            // error, retorno temprano). Si quedara en true, REINTENTAR dejaría de funcionar.
+            isLoadingAssignmentRef.current = false;
+        }
+    }, [driverDni]);
 
     useEffect(() => {
         const logSubscription = DeviceEventEmitter.addListener('PRO_DEBUG_LOG', (newLog) => {
@@ -154,7 +265,7 @@ export const SendCoordinates = ({ driverDni }: Props) => {
 
         // C4.7: Al re-montar, si el servicio sigue activo se restaura el estado visual.
         // Va después de los listeners (para que sendLog funcione) y antes de
-        // fetchAssignment() porque únicamente restaura el estado del motor: no depende
+        // loadAssignment() porque únicamente restaura el estado del motor: no depende
         // de Firebase ni modifica la asignación. isRunning() conserva true cuando el
         // proceso y el singleton JS sobrevivieron al cierre de la app.
         if (BackgroundJob.isRunning()) {
@@ -165,79 +276,15 @@ export const SendCoordinates = ({ driverDni }: Props) => {
             sendLog("ℹ️ Recorrido restaurado: el servicio seguía activo en segundo plano", "success");
         }
 
-        // T11: Consulta Dinámica Oficial en la Nube con Filtros
-        const fetchAssignment = async () => {
-            try {
-                // Generamos la fecha local real del dispositivo en formato YYYY-MM-DD
-                const d = new Date();
-                const year = d.getFullYear();
-                const month = String(d.getMonth() + 1).padStart(2, '0');
-                const day = String(d.getDate()).padStart(2, '0');
-                const today = `${year}-${month}-${day}`;
-                
-                try {
-                    const choferSnapshot = await database()
-                        .ref(`/choferes/${driverDni}`)
-                        .once('value');
-                    if (choferSnapshot.exists()) {
-                        const chofer = choferSnapshot.val();
-                        const fullName = `${chofer.nombre} ${chofer.apellidos}`.trim();
-                        setDriverName(fullName);
-                        sendLog(`👤 Conductor identificado: ${fullName}`, "success");
-                    } else {
-                        setDriverName(null);
-                        sendLog(`⚠️ Sin registro en choferes, se usará el DNI (${driverDni})`, "error");
-                    }
-                } catch (err: any) {
-                    setDriverName(null);
-                    sendLog(`❌ Error consultando nombre del conductor: ${err.message}`, "error");
-                }
-
-                sendLog(`Buscando asignación para hoy (${today})...`);
-
-                // Filtro en la nube gracias a la nueva regla indexOn
-                const snapshot = await database().ref('/asignaciones')
-                    .orderByChild('choferId')
-                    .equalTo(driverDni)
-                    .once('value');
-
-                let foundBusId: string | null = null;
-                let foundAsignacionId: string | null = null;
-
-                if (snapshot.exists()) {
-                    snapshot.forEach((child) => {
-                        const val = child.val();
-                        // Comparamos fecha y que esté activo
-                        if (val.fecha === today && val.activo === true) {
-                            foundBusId = val.busId;
-                            foundAsignacionId = child.key;
-                        }
-                        return undefined;
-                    });
-                }
-
-                if (foundBusId) {
-                    setBusId(foundBusId);
-                    setAsignacionId(foundAsignacionId);
-                    sendLog(`🚌 Bus asignado: ${foundBusId}`, "success");
-                } else {
-                    sendLog(`❌ No hay asignación para hoy (${today}).`, "error");
-                }
-            } catch (err: any) {
-                sendLog(`❌ Error consultando asignación: ${err.message}`, "error");
-            } finally {
-                setLoadingAssignment(false);
-            }
-        };
-
-        fetchAssignment();
+        // C4.3: Carga de la asignación con timeout y reintento acotado (ver loadAssignment)
+        loadAssignment();
 
         return () => {
             logSubscription.remove();
             pulseSubscription.remove();
             appStateSub.remove();
         };
-    }, [driverDni]);
+    }, [driverDni, loadAssignment]);
 
     // C3: Arranca el BackgroundJob (usado por INICIAR y por el reinicio automático)
     const startBackgroundJob = useCallback(async () => {
@@ -354,7 +401,30 @@ export const SendCoordinates = ({ driverDni }: Props) => {
                 {loadingAssignment ? (
                     <View style={styles.loadingContainer}>
                         <ActivityIndicator size="large" color={COLORS.primary} />
-                        <Text style={styles.loadingText}>Cargando asignación...</Text>
+                        <Text style={styles.loadingText}>
+                            {retrying ? 'Problemas de conexión. Reintentando…' : 'Cargando asignación...'}
+                        </Text>
+                    </View>
+                ) : assignmentError ? (
+                    // C4.3: Se agotaron los reintentos — tarjeta visible, nunca atrapar al conductor.
+                    // CERRAR SESIÓN siempre accesible. REINTENTAR dispara un nuevo ciclo de 2 intentos.
+                    <View style={styles.errorCard}>
+                        <Text style={styles.errorTitle}>No se pudo cargar tu asignación</Text>
+                        <Text style={styles.errorSubtitle}>
+                            Verifica tu conexión a Internet e inténtalo nuevamente.
+                        </Text>
+                        <Pressable
+                            onPress={loadAssignment}
+                            style={styles.btnStart}
+                        >
+                            <Text style={styles.btnText}>REINTENTAR</Text>
+                        </Pressable>
+                        <Pressable
+                            onPress={handleLogout}
+                            style={styles.btnLogout}
+                        >
+                            <Text style={styles.btnText}>CERRAR SESIÓN</Text>
+                        </Pressable>
                     </View>
                 ) : (
                     <>
@@ -573,6 +643,31 @@ const styles = StyleSheet.create({
         fontFamily: TYPOGRAPHY.primary.medium,
         fontSize: 13,
         lineHeight: 18,
+    },
+    // C4.3: Tarjeta visible cuando se agotan los reintentos de carga de asignación
+    errorCard: {
+        alignItems: 'center',
+        marginVertical: 24,
+        padding: 20,
+        borderRadius: 12,
+        backgroundColor: '#FFF4F4',
+        borderWidth: 1,
+        borderColor: '#FFCDD2',
+    },
+    errorTitle: {
+        color: '#d32f2f',
+        fontFamily: TYPOGRAPHY.primary.bold,
+        fontSize: 16,
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    errorSubtitle: {
+        color: '#555',
+        fontFamily: TYPOGRAPHY.primary.medium,
+        fontSize: 13,
+        textAlign: 'center',
+        lineHeight: 18,
+        marginBottom: 16,
     },
     btnStart: {
         backgroundColor: COLORS.primary,
