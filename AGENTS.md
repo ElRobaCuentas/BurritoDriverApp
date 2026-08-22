@@ -165,6 +165,15 @@ al cerrar la app sin escribir `isActive: false`.
 Son marcadores de refactors anteriores en `SendCoordinates.tsx`.
 Ayudan a rastrear el historial de cambios en líneas críticas.
 
+### 6.16 No eliminar ni mover el heartbeat (T4.1)
+
+El heartbeat de 8 s (`HEARTBEAT_INTERVAL_MS`, dentro de `locationTask`)
+garantiza publicaciones periódicas a RTDB cuando el GPS no emite (bus
+quieto). Debe escribir con el mismo `writeLocation()` del GPS; **nunca**
+abrir una segunda ruta de escritura. Sin él, un bus estacionado cruza el
+umbral de expiración de la UserApp y desaparece del mapa (C4.6), y el
+watchdog C3 puede reiniciar el servicio en falso. Ver ADR-019.
+
 ---
 
 ## 7. Convenciones

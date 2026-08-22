@@ -31,6 +31,12 @@ const sendLog = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
 const PULSE_TIMEOUT_MS = 30000;
 const WATCHDOG_INTERVAL_MS = 10000;
 
+// T4.1: Heartbeat de presencia. Cuando el GPS no emite (bus quieto, sin
+// superar distanceFilter), el heartbeat mantiene fresco el timestamp en RTDB
+// escribiendo la última posición conocida. Menor que PULSE_TIMEOUT_MS para
+// que el watchdog no interprete el bus estacionado como servicio muerto.
+const HEARTBEAT_INTERVAL_MS = 8000;
+
 // C4.3: Timeout y reintentos al cargar la asignación.
 // El timeout cubre el intento COMPLETO (lectura de chofer + lectura de asignación).
 const ASSIGNMENT_TIMEOUT_MS = 10000;
@@ -43,26 +49,57 @@ const locationTask = async (taskDataArguments: any) => {
     sendLog(`🚀 MOTOR: ¡VIVO CON CHOFER ${uidChofer.substring(0,6)}...!`, "success");
 
     return new Promise<void>((resolve) => {
+        // T4.1: Última posición conocida y último intento de escritura a RTDB.
+        // lastWriteAt se fija al INTENTAR escribir (antes del await) y se
+        // resetea en fallo, para que el heartbeat no descarte fuegos ni
+        // duplique escrituras cuando el GPS ya emitió hace poco.
+        let lastLocation: { latitude: number; longitude: number; heading: number; speed: number } | null = null;
+        let lastWriteAt = 0;
+
+        // T4.1: Única ruta de escritura a RTDB. Tanto el callback del GPS como
+        // el heartbeat pasan por aquí para no divergir (una sola
+        // responsabilidad de escribir en Firebase).
+        const writeLocation = async (coords: { latitude: number; longitude: number; heading: number; speed: number }) => {
+            try {
+                // T4.1: lastWriteAt se fija ANTES del await (instante del intento).
+                // Antes se fijaba tras el éxito: el siguiente fuego del heartbeat
+                // (~8004 ms después) quedaba por debajo de HEARTBEAT_INTERVAL_MS y
+                // se descartaba → patrón real escribir → saltar → escribir (≈16 s).
+                lastWriteAt = Date.now();
+                // T11: Usamos updateBusLocation con la placa dinámica
+                await updateBusLocation(busId, {
+                    ...coords,
+                    timestamp: Date.now(),
+                });
+                return true;
+            } catch (err: any) {
+                // T4.1: El intento fallido no cuenta como escritura reciente:
+                // se resetea para que el próximo fuego del heartbeat reintente
+                // (≈8 s), sin cola ni escrituras duplicadas.
+                lastWriteAt = 0;
+                sendLog(`❌ FALLO FIREBASE: ${err.message}`, "error");
+                return false;
+            }
+        };
+
         const watchId = Geolocation.watchPosition(
             async (position) => {
                 const { latitude, longitude, heading, speed } = position.coords;
+                const coords = {
+                    latitude,
+                    longitude,
+                    heading: heading ?? 0,
+                    speed: speed ?? 0,
+                };
+                lastLocation = coords;
                 // C3: Pulso de vida hacia la UI (mismo canal que el debug panel)
                 DeviceEventEmitter.emit('PRO_LOCATION_PULSE', { ts: Date.now() });
                 sendLog(`✅ POSICIÓN: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, "success");
 
-                try {
-                    sendLog("☁️ Subiendo a Firebase...");
-                    // T11: Usamos updateBusLocation con la placa dinámica
-                    await updateBusLocation(busId, {
-                        latitude,
-                        longitude,
-                        heading: heading ?? 0,
-                        speed: speed ?? 0,
-                        timestamp: Date.now(),
-                    });
+                sendLog("☁️ Subiendo a Firebase...");
+                const ok = await writeLocation(coords);
+                if (ok) {
                     sendLog("✅ FIREBASE ACTUALIZADO", "success");
-                } catch (err: any) {
-                    sendLog(`❌ FALLO FIREBASE: ${err.message}`, "error");
                 }
             },
             (err) => {
@@ -76,10 +113,29 @@ const locationTask = async (taskDataArguments: any) => {
             }
         );
 
+        // T4.1: Heartbeat de presencia. Mantiene fresco el timestamp en RTDB
+        // cuando el GPS no emite (bus quieto, sin superar distanceFilter).
+        // Escribe la última posición conocida solo si no hubo otra escritura
+        // reciente, para no duplicar el trabajo del GPS.
+        const heartbeat = setInterval(() => {
+            if (!lastLocation) {
+                return;
+            }
+            if (Date.now() - lastWriteAt < HEARTBEAT_INTERVAL_MS) {
+                return;
+            }
+            // C3: El pulso también vale como señal de vida hacia la UI,
+            // aunque la escritura falle (sin red, por ejemplo).
+            DeviceEventEmitter.emit('PRO_LOCATION_PULSE', { ts: Date.now() });
+            sendLog(`💓 HEARTBEAT: ${lastLocation.latitude.toFixed(5)}, ${lastLocation.longitude.toFixed(5)}`, "info");
+            writeLocation(lastLocation);
+        }, HEARTBEAT_INTERVAL_MS);
+
         const keepAlive = setInterval(() => {
             if (!BackgroundJob.isRunning()) {
                 Geolocation.clearWatch(watchId);
                 clearInterval(keepAlive);
+                clearInterval(heartbeat);
                 sendLog("🛑 MOTOR APAGADO", "error");
                 resolve();
             }
