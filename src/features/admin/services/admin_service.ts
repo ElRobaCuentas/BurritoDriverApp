@@ -29,6 +29,7 @@ export interface Asignacion {
 const CHOFERES_PATH = '/choferes';
 const BUSES_PATH = '/buses';
 const ASIGNACIONES_PATH = '/asignaciones';
+const CHOFERES_UIDS_PATH = '/choferes_uids';
 
 export const AdminService = {
   // ============================
@@ -82,7 +83,7 @@ export const AdminService = {
 
     try {
       const secondaryAuth = auth(secondaryApp);
-      await secondaryAuth.createUserWithEmailAndPassword(email, password);
+      const credential = await secondaryAuth.createUserWithEmailAndPassword(email, password);
       await secondaryAuth.signOut();
 
       await ref.set({
@@ -90,6 +91,8 @@ export const AdminService = {
         apellidos: chofer.apellidos.trim(),
         activo: true
       });
+      // Vinculo uid -> dni para la autorizacion RTDB de /ubicacion_buses (ADR-023)
+      await firebaseDatabase.ref(`${CHOFERES_UIDS_PATH}/${credential.user.uid}`).set(chofer.dni);
       return true;
     } catch (error: any) {
       throw new Error(`Error de autenticación: ${error.message}`);
