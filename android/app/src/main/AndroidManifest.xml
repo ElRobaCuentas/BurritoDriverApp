@@ -36,7 +36,7 @@
           android:name="com.asterinet.react.bgactions.RNBackgroundActionsTask"
           android:foregroundServiceType="location"
           android:stopWithTask="false" 
-          android:exported="true" />
+          android:exported="false" />
 
     </application>
 </manifest>
