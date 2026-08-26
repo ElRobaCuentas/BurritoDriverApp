@@ -1,4 +1,5 @@
 import database from '@react-native-firebase/database';
+import crashlytics from '@react-native-firebase/crashlytics';
 
 interface LocationData {
   latitude: number;
@@ -18,6 +19,7 @@ export const updateBusLocation = async (busId: string, data: LocationData) => {
     return true; 
   } catch (error) {
     console.error('Error actualizando ubicación del bus:', error);
+    crashlytics().recordError(error as Error, 'updateBusLocation');
     return false;
   }
 };
@@ -31,6 +33,7 @@ export const stopBusService = async (busId: string) => {
     return true;
   } catch (error) {
     console.error('Error deteniendo servicio del bus:', error);
+    crashlytics().recordError(error as Error, 'stopBusService');
     return false;
   }
 };

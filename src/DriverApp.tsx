@@ -17,6 +17,7 @@ import { AdminNavigator } from './navigation/AdminNavigator';
 import { existeAdministrador } from './features/admin/services/admin_check';
 import { COLORS } from './shared/theme/colors';
 import { TYPOGRAPHY } from './shared/theme/typography';
+import crashlytics from '@react-native-firebase/crashlytics';
 
 export const DriverApp = () => {
   const [initializing, setInitializing] = useState(true);
@@ -29,6 +30,9 @@ export const DriverApp = () => {
   useEffect(() => {
     const subscriber = auth().onAuthStateChanged((currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        crashlytics().setUserId(currentUser.uid);
+      }
     });
     return subscriber;
   }, []);
@@ -64,6 +68,7 @@ export const DriverApp = () => {
     try {
       await auth().signOut();
     } catch {
+      crashlytics().recordError(new Error('Logout failed'), 'handleLogout');
       Alert.alert('Error', 'No se pudo cerrar la sesión. Inténtalo nuevamente.');
     }
   };

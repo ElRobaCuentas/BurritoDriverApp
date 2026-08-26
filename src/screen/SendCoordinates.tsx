@@ -13,6 +13,7 @@ import Geolocation from '@react-native-community/geolocation';
 import { COLORS } from '../shared/theme/colors';
 import { TYPOGRAPHY } from '../shared/theme/typography';
 import { pause, withTimeout } from '../shared/utils/timeout';
+import crashlytics from '@react-native-firebase/crashlytics';
 
 interface Props {
     driverDni: string;
@@ -369,6 +370,7 @@ export const SendCoordinates = ({ driverDni }: Props) => {
             sendLog("🔄 SERVICIO REINICIADO", "success");
         } catch (e: any) {
             sendLog(`❌ NO SE PUDO REINICIAR: ${e.message}`, "error");
+            crashlytics().recordError(e, 'restartBackgroundJob');
             setIsSending(false);
             setRecoveryFailed(true);
             Alert.alert(
@@ -411,6 +413,7 @@ export const SendCoordinates = ({ driverDni }: Props) => {
             await startBackgroundJob();
         } catch (e: any) {
             sendLog(`❌ CRASH UI: ${e.message}`, "error");
+            crashlytics().recordError(e, 'startProcess');
         }
     };
 
