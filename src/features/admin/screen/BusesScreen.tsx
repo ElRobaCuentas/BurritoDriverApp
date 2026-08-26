@@ -69,7 +69,15 @@ export const BusesScreen = () => {
       <Switch
         value={item.activo}
         onValueChange={(newValue: boolean) => {
-          AdminService.toggleBusStatus(item.placa, newValue).catch(() => {});
+          const accion = item.activo ? 'desactivar' : 'activar';
+          Alert.alert(
+            'Confirmar',
+            `¿Estás seguro que querés ${accion} el bus ${item.placa}?`,
+            [
+              { text: 'No', style: 'cancel' },
+              { text: 'Sí', onPress: () => AdminService.toggleBusStatus(item.placa, newValue) },
+            ],
+          );
         }}
         trackColor={{ false: '#CCCCCC', true: COLORS.primary }}
         thumbColor={COLORS.white}

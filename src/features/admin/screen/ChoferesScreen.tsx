@@ -61,7 +61,15 @@ export const ChoferesScreen = () => {
       <Switch
         value={item.activo}
         onValueChange={() => {
-          AdminService.toggleChoferStatus(item.dni, item.activo);
+          const accion = item.activo ? 'desactivar' : 'activar';
+          Alert.alert(
+            'Confirmar',
+            `¿Estás seguro que querés ${accion} a ${item.nombre} ${item.apellidos}?`,
+            [
+              { text: 'No', style: 'cancel' },
+              { text: 'Sí', onPress: () => AdminService.toggleChoferStatus(item.dni, item.activo) },
+            ],
+          );
         }}
         trackColor={{ false: '#CCCCCC', true: COLORS.primary }}
         thumbColor={COLORS.white}
