@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, Switch, Alert, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, Switch, Alert, StyleSheet, ActivityIndicator, Modal } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { AdminService, Chofer } from '../services/admin_service';
 import { FloatingBackButton } from '../../../shared/components/FloatingBackButton';
@@ -16,6 +16,12 @@ export const ChoferesScreen = () => {
   const [dni, setDni] = useState('');
   const [nombre, setNombre] = useState('');
   const [apellidos, setApellidos] = useState('');
+
+  // Estado para edición
+  const [editingDni, setEditingDni] = useState<string | null>(null);
+  const [editNombre, setEditNombre] = useState('');
+  const [editApellidos, setEditApellidos] = useState('');
+  const [saving, setSaving] = useState(false);
 
   // 1. Cargar choferes en tiempo real
   useEffect(() => {
@@ -51,29 +57,90 @@ export const ChoferesScreen = () => {
     }
   };
 
-  // 3. Renderizar cada fila de la lista
+  // 3. Manejar Edición
+  const handleEdit = async () => {
+    if (!editingDni || !editNombre || !editApellidos) return;
+    setSaving(true);
+    try {
+      await AdminService.updateChofer(editingDni, { nombre: editNombre, apellidos: editApellidos });
+      setEditingDni(null);
+      Alert.alert('Éxito', 'Conductor actualizado correctamente.');
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 4. Manejar Eliminación
+  const handleDelete = async (chofer: Chofer) => {
+    const tieneAsignacion = await AdminService.hasActiveAssignment(chofer.dni);
+    if (tieneAsignacion) {
+      Alert.alert('No permitido', 'Este conductor tiene una asignación activa. Cancele la asignación primero.');
+      return;
+    }
+    Alert.alert(
+      'Eliminar',
+      `¿Eliminar a ${chofer.nombre} ${chofer.apellidos}? Esta acción no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AdminService.deleteChofer(chofer.dni);
+              Alert.alert('Éxito', `Conductor ${chofer.nombre} eliminado.`);
+            } catch (error: any) {
+              Alert.alert('Error', error.message);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // 5. Renderizar cada fila de la lista
   const renderItem = ({ item }: { item: Chofer }) => (
     <View style={styles.card}>
       <View style={styles.cardInfo}>
         <Text style={styles.cardTitle}>{item.nombre} {item.apellidos}</Text>
         <Text style={styles.cardSubtitle}>DNI: {item.dni}</Text>
       </View>
-      <Switch
-        value={item.activo}
-        onValueChange={() => {
-          const accion = item.activo ? 'desactivar' : 'activar';
-          Alert.alert(
-            'Confirmar',
-            `¿Estás seguro que querés ${accion} a ${item.nombre} ${item.apellidos}?`,
-            [
-              { text: 'No', style: 'cancel' },
-              { text: 'Sí', onPress: () => AdminService.toggleChoferStatus(item.dni, item.activo) },
-            ],
-          );
-        }}
-        trackColor={{ false: '#CCCCCC', true: COLORS.primary }}
-        thumbColor={COLORS.white}
-      />
+      <View style={styles.cardActions}>
+        <Switch
+          value={item.activo}
+          onValueChange={() => {
+            const accion = item.activo ? 'desactivar' : 'activar';
+            Alert.alert(
+              'Confirmar',
+              `¿Estás seguro que querés ${accion} a ${item.nombre} ${item.apellidos}?`,
+              [
+                { text: 'No', style: 'cancel' },
+                { text: 'Sí', onPress: () => AdminService.toggleChoferStatus(item.dni, item.activo) },
+              ],
+            );
+          }}
+          trackColor={{ false: '#CCCCCC', true: COLORS.primary }}
+          thumbColor={COLORS.white}
+        />
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={() => {
+            setEditingDni(item.dni);
+            setEditNombre(item.nombre);
+            setEditApellidos(item.apellidos);
+          }}
+        >
+          <Text style={styles.iconText}>✏️</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={() => handleDelete(item)}
+        >
+          <Text style={styles.iconText}>🗑️</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -137,6 +204,46 @@ export const ChoferesScreen = () => {
           <Text style={styles.emptyText}>No hay conductores registrados aún.</Text>
         }
       />
+
+      {/* MODAL DE EDICIÓN */}
+      <Modal visible={editingDni !== null} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Editar Conductor</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Nombres"
+              placeholderTextColor="#999999"
+              value={editNombre}
+              onChangeText={setEditNombre}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Apellidos"
+              placeholderTextColor="#999999"
+              value={editApellidos}
+              onChangeText={setEditApellidos}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.button, saving && styles.buttonDisabled]}
+                onPress={handleEdit}
+                disabled={saving}
+              >
+                <Text style={styles.buttonText}>
+                  {saving ? 'Guardando...' : 'Guardar'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, styles.buttonCancel]}
+                onPress={() => setEditingDni(null)}
+              >
+                <Text style={styles.buttonText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -193,6 +300,9 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.7,
   },
+  buttonCancel: {
+    backgroundColor: '#999999',
+  },
   buttonText: {
     color: COLORS.white,
     fontFamily: TYPOGRAPHY.primary.bold,
@@ -226,10 +336,45 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginTop: 2,
   },
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconButton: {
+    padding: 6,
+  },
+  iconText: {
+    fontSize: 18,
+  },
   emptyText: {
     textAlign: 'center',
     color: '#666666',
     fontFamily: TYPOGRAPHY.primary.regular,
     marginTop: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 24,
+    width: '85%',
+  },
+  modalTitle: {
+    fontFamily: TYPOGRAPHY.primary.bold,
+    fontSize: 18,
+    color: COLORS.textTitle,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
   },
 });

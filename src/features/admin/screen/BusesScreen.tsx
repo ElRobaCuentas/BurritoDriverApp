@@ -12,11 +12,8 @@ export const BusesScreen = () => {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
 
-  // Estados del Formulario
+  // Estado del Formulario
   const [placa, setPlaca] = useState('');
-  const [marca, setMarca] = useState('');
-  const [modelo, setModelo] = useState('');
-  const [anio, setAnio] = useState('');
 
   // 1. Cargar buses en tiempo real
   useEffect(() => {
@@ -29,11 +26,11 @@ export const BusesScreen = () => {
 
   // 2. Manejar Creación
   const handleCreate = async () => {
-    if (!placa || !modelo || !marca || !anio) {
-      Alert.alert('Error', 'Todos los campos son obligatorios');
+    if (!placa) {
+      Alert.alert('Error', 'La placa es obligatoria');
       return;
     }
-    
+
     if (placa.trim().length < 6) {
       Alert.alert('Error', 'Ingrese una placa válida');
       return;
@@ -41,17 +38,11 @@ export const BusesScreen = () => {
 
     setCreating(true);
     try {
-      await AdminService.createBus({ 
-        placa: placa.toUpperCase().trim(), 
-        modelo: modelo.trim(), 
-        marca: marca.trim(), 
-        anio: anio.trim() 
+      await AdminService.createBus({
+        placa: placa.toUpperCase().trim(),
       });
       Alert.alert('Éxito', 'Bus registrado correctamente en la flota.');
       setPlaca('');
-      setMarca('');
-      setModelo('');
-      setAnio('');
     } catch (error: any) {
       Alert.alert('Error al registrar', error.message);
     } finally {
@@ -59,29 +50,64 @@ export const BusesScreen = () => {
     }
   };
 
-  // 3. Renderizar cada fila de la lista
+  // 3. Manejar Eliminación
+  const handleDelete = async (bus: Bus) => {
+    const tieneAsignacion = await AdminService.hasActiveBusAssignment(bus.placa);
+    if (tieneAsignacion) {
+      Alert.alert('No permitido', 'Este bus tiene una asignación activa. Cancele la asignación primero.');
+      return;
+    }
+    Alert.alert(
+      'Eliminar',
+      `¿Eliminar el bus ${bus.placa}? Esta acción no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AdminService.deleteBus(bus.placa);
+              Alert.alert('Éxito', `Bus ${bus.placa} eliminado.`);
+            } catch (error: any) {
+              Alert.alert('Error', error.message);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // 4. Renderizar cada fila de la lista
   const renderItem = ({ item }: { item: Bus }) => (
     <View style={styles.card}>
       <View style={styles.cardInfo}>
         <Text style={styles.cardTitle}>{item.placa}</Text>
-        <Text style={styles.cardSubtitle}>{item.marca} {item.modelo} - {item.anio}</Text>
       </View>
-      <Switch
-        value={item.activo}
-        onValueChange={(newValue: boolean) => {
-          const accion = item.activo ? 'desactivar' : 'activar';
-          Alert.alert(
-            'Confirmar',
-            `¿Estás seguro que querés ${accion} el bus ${item.placa}?`,
-            [
-              { text: 'No', style: 'cancel' },
-              { text: 'Sí', onPress: () => AdminService.toggleBusStatus(item.placa, newValue) },
-            ],
-          );
-        }}
-        trackColor={{ false: '#CCCCCC', true: COLORS.primary }}
-        thumbColor={COLORS.white}
-      />
+      <View style={styles.cardActions}>
+        <Switch
+          value={item.activo}
+          onValueChange={(newValue: boolean) => {
+            const accion = item.activo ? 'desactivar' : 'activar';
+            Alert.alert(
+              'Confirmar',
+              `¿Estás seguro que querés ${accion} el bus ${item.placa}?`,
+              [
+                { text: 'No', style: 'cancel' },
+                { text: 'Sí', onPress: () => AdminService.toggleBusStatus(item.placa, newValue) },
+              ],
+            );
+          }}
+          trackColor={{ false: '#CCCCCC', true: COLORS.primary }}
+          thumbColor={COLORS.white}
+        />
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={() => handleDelete(item)}
+        >
+          <Text style={styles.iconText}>🗑️</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -100,7 +126,7 @@ export const BusesScreen = () => {
       {/* SECCIÓN FORMULARIO */}
       <View style={styles.formContainer}>
         <Text style={styles.sectionTitle}>Registrar Nuevo Bus</Text>
-        
+
         <TextInput
           style={styles.input}
           placeholder="Placa (Ej: AHK-452)"
@@ -108,29 +134,6 @@ export const BusesScreen = () => {
           autoCapitalize="characters"
           value={placa}
           onChangeText={setPlaca}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Marca (Ej: Mercedes-Benz)"
-          placeholderTextColor="#999999"
-          value={marca}
-          onChangeText={setMarca}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Modelo (Ej: Sprinter)"
-          placeholderTextColor="#999999"
-          value={modelo}
-          onChangeText={setModelo}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Año (Ej: 2022)"
-          placeholderTextColor="#999999"
-          keyboardType="numeric"
-          maxLength={4}
-          value={anio}
-          onChangeText={setAnio}
         />
 
         <TouchableOpacity
@@ -238,11 +241,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.textTitle,
   },
-  cardSubtitle: {
-    fontFamily: TYPOGRAPHY.primary.regular,
-    fontSize: 14,
-    color: '#666666',
-    marginTop: 2,
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconButton: {
+    padding: 6,
+  },
+  iconText: {
+    fontSize: 18,
   },
   emptyText: {
     textAlign: 'center',

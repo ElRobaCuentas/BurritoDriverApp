@@ -12,9 +12,6 @@ export interface Chofer {
 
 export interface Bus {
   placa: string;
-  modelo: string;
-  marca: string;
-  anio: string;
   activo: boolean;
 }
 
@@ -91,7 +88,8 @@ export const AdminService = {
       await ref.set({
         nombre: chofer.nombre.trim(),
         apellidos: chofer.apellidos.trim(),
-        activo: true
+        activo: true,
+        uid: credential.user.uid
       });
       // Vinculo uid -> dni para la autorizacion RTDB de /ubicacion_buses (ADR-023)
       await firebaseDatabase.ref(`${CHOFERES_UIDS_PATH}/${credential.user.uid}`).set(chofer.dni);
@@ -155,9 +153,6 @@ export const AdminService = {
     }
 
     await ref.set({
-      modelo: busData.modelo.trim(),
-      marca: busData.marca.trim(),
-      anio: busData.anio.trim(),
       activo: true
     });
 
@@ -267,5 +262,81 @@ export const AdminService = {
       console.error('Error cancelando asignación:', error);
       return false;
     }
-  }
+  },
+
+  // ============================
+  // EDICIÓN Y ELIMINACIÓN
+  // ============================
+
+  // 5. Verificar si un conductor tiene asignación activa HOY
+  hasActiveAssignment: async (dni: string): Promise<boolean> => {
+    const today = AdminService.getTodayDateString();
+    const snapshot = await firebaseDatabase.ref(ASIGNACIONES_PATH).once('value');
+    if (!snapshot.exists()) return false;
+    const data = snapshot.val();
+    return Object.values(data).some(
+      (a: any) => a.choferId === dni && a.fecha === today && a.activo === true,
+    );
+  },
+
+  // 6. Verificar si un bus tiene asignación activa HOY
+  hasActiveBusAssignment: async (placa: string): Promise<boolean> => {
+    const today = AdminService.getTodayDateString();
+    const snapshot = await firebaseDatabase.ref(ASIGNACIONES_PATH).once('value');
+    if (!snapshot.exists()) return false;
+    const data = snapshot.val();
+    return Object.values(data).some(
+      (a: any) => a.busId === placa && a.fecha === today && a.activo === true,
+    );
+  },
+
+  // 7. Editar conductor (nombre y apellidos)
+  updateChofer: async (dni: string, data: { nombre: string; apellidos: string }) => {
+    await firebaseDatabase.ref(`${CHOFERES_PATH}/${dni}`).update({
+      nombre: data.nombre.trim(),
+      apellidos: data.apellidos.trim(),
+    });
+    return true;
+  },
+
+  // 8. Eliminar conductor (RTDB primero con auth admin, luego Auth del conductor)
+  deleteChofer: async (dni: string) => {
+    // Leer uid desde /choferes/{dni} (no de /choferes_uids, que tiene .read: false)
+    const choferSnapshot = await firebaseDatabase.ref(`${CHOFERES_PATH}/${dni}`).once('value');
+    const uid = choferSnapshot.exists() ? (choferSnapshot.val().uid as string | undefined) : null;
+
+    // Eliminar registros de RTDB (con auth de admin activa)
+    await firebaseDatabase.ref(`${CHOFERES_PATH}/${dni}`).remove();
+    if (uid) {
+      await firebaseDatabase.ref(`${CHOFERES_UIDS_PATH}/${uid}`).remove();
+    }
+
+    // Eliminar cuenta de Auth del conductor (best-effort)
+    try {
+      const email = `${dni}@burritodriver.com`;
+      const config = firebase.app().options;
+      let secondaryApp: ReactNativeFirebase.FirebaseApp;
+      try {
+        secondaryApp = firebase.app('SecondaryApp');
+      } catch (e) {
+        secondaryApp = await firebase.initializeApp(config, 'SecondaryApp');
+      }
+
+      const secondaryAuth = auth(secondaryApp);
+      await secondaryAuth.signInWithEmailAndPassword(email, dni);
+      await secondaryAuth.currentUser!.delete();
+      await secondaryAuth.signOut();
+    } catch {
+      // Auth ya no existe o falló — la eliminación RTDB ya se hizo
+    }
+
+    return true;
+  },
+
+  // 9. Eliminar bus (RTDB + ubicacion_buses)
+  deleteBus: async (placa: string) => {
+    await firebaseDatabase.ref(`${BUSES_PATH}/${placa}`).remove();
+    await firebaseDatabase.ref(`/ubicacion_buses/${placa}`).remove();
+    return true;
+  },
 };
