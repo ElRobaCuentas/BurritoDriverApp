@@ -25,7 +25,7 @@ export const LoginDriverScreen = () => {
 
     setLoading(true);
     try {
-      const email = `${dni.trim()}@burritodriver.com`;
+      const email = `${dni.trim()}@conductor.com`;
       await auth().signInWithEmailAndPassword(email, password);
     } catch (error: any) {
       if (error.code === 'auth/network-request-failed') {
@@ -56,7 +56,7 @@ export const LoginDriverScreen = () => {
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.title}>
-          Acceso para conductores y administradores
+          Acceso para conductores
         </Text>
 
         <View style={styles.formSection}>
