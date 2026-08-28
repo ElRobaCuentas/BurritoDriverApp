@@ -2,7 +2,6 @@
  * @format
  */
 
-import 'react-native-gesture-handler';
 import { AppRegistry } from 'react-native';
 import { DriverApp } from './src/DriverApp';
 import { name as appName } from './app.json';
