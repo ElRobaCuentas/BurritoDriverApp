@@ -33,19 +33,19 @@
 - **Propósito**: Evitar el límite de 260 caracteres del NDK de Windows
 - **Estado**: Copia física con `.git` propio, mismo HEAD que el original
 
-### Estructura relevante de `C:\ProyectosMovil`
+### Estructura relevante de `C:\Movil`
 
 ```
-C:\ProyectosMovil\
-├── BurritoDriverApp/        ← Proyecto afectado (este reporte)
-├── BurritoUserApp/          ← No afectado
+C:\Movil\
+├── Driver/                  ← Proyecto afectado (este reporte)
+├── User/                    ← No afectado
+├── AdminWeb/                ← Panel de administración web
 ├── docs/                    ← Documentación general del ecosistema
 ├── .opencode/               ← Configuración de OpenCode
-├── Documentación_Oficial.docx
-├── FLUJO_DE_TRABAJO.md
-├── IDEAS.txt
-├── PLAN_MIGRACION_DRIVER_APP.txt
-└── TAREAS.txt
+├── DOCUMENTACION_OFICIAL.md
+├── HISTORIAL.md             ← Registro histórico del proyecto
+├── MVP.md                   ← Backlog oficial
+└── FLUJO_DE_TRABAJO.md
 ```
 
 ### Estado inicial del proyecto antes de la investigación
@@ -501,18 +501,18 @@ cd android && ./gradlew assembleRelease
 
 | Archivo | Ruta absoluta |
 |---------|---------------|
-| Package.json | `C:\ProyectosMovil\BurritoDriverApp\package.json` |
-| Gradle properties | `C:\ProyectosMovil\BurritoDriverApp\android\gradle.properties` |
-| Script postinstall | `C:\ProyectosMovil\BurritoDriverApp\scripts\fix-geolocation-codegen.js` |
-| Este documento | `C:\ProyectosMovil\BurritoDriverApp\docs\build-recovery-report.md` |
+| Package.json | `C:\Movil\Driver\package.json` |
+| Gradle properties | `C:\Movil\Driver\android\gradle.properties` |
+| Script postinstall | `C:\Movil\Driver\scripts\fix-geolocation-codegen.js` |
+| Este documento | `C:\Movil\Driver\docs\build-recovery-report.md` |
 
 ### Archivos del ecosistema del proyecto
 
 | Archivo | Ruta |
 |---------|------|
-| AGENTS.md | `C:\ProyectosMovil\BurritoDriverApp\AGENTS.md` |
-| Documentación general | `C:\ProyectosMovil\docs\` |
-| README.md | `C:\ProyectosMovil\BurritoDriverApp\README.md` |
+| AGENTS.md | `C:\Movil\Driver\AGENTS.md` |
+| Documentación general | `C:\Movil\docs\` |
+| README.md | `C:\Movil\Driver\README.md` |
 
 ### Código fuente de RN involucrado (node_modules)
 

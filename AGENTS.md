@@ -203,7 +203,6 @@ watchdog C3 puede reiniciar el servicio en falso. Ver ADR-019.
 | Limitación | `docs/PROJECT_CONTEXT.md` |
 | Prioridades | `docs/ROADMAP.md` |
 | Regla IA | `AGENTS.md` |
-| Revisión futura | `docs/ReviewNotes.md` |
 | Setup | `README.md` |
 
 ---
@@ -215,7 +214,6 @@ watchdog C3 puede reiniciar el servicio en falso. Ver ADR-019.
 - [ ] Ciclo de tracking intacto (login → start → stop → logout).
 - [ ] Foreground Service consistente en los 3 lugares si se modificó.
 - [ ] Documentación sincronizada (todos los docs afectados).
-- [ ] ReviewNotes actualizadas si aplica.
 
 **Nota:** `__tests__/App.test.tsx` es heredado y falla. No corregirlo
 salvo que la tarea lo solicite.
@@ -232,6 +230,5 @@ salvo que la tarea lo solicite.
 | Próximas fases | `docs/ROADMAP.md` |
 | Bugs conocidos | `docs/TROUBLESHOOTING.md` |
 | Decisiones | `docs/DECISIONS.md` |
-| Revisión futura | `docs/ReviewNotes.md` |
 | Historial de bugs resueltos | `docs/BUGS_RESUELTOS/` |
 | Setup | `README.md` |

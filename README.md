@@ -4,9 +4,14 @@ Aplicación móvil para los conductores del sistema de transporte
 universitario "Oficina de Transportes" de la UNMSM. Captura coordenadas
 GPS y las transmite en tiempo real a Firebase Realtime Database.
 
-Es la única aplicación del ecosistema con permisos de escritura sobre
+Es una de las aplicaciones del ecosistema con permisos de escritura sobre
 los nodos de tracking. Está diseñada para ejecutarse en dispositivos
 Android dedicados instalados en los buses.
+
+Además del flujo de conductor (captura y envío de GPS), la DriverApp
+incluye un **módulo admin** que permite gestionar conductores, buses y
+asignaciones diarias. El acceso admin está restringido a usuarios cuyo
+UID existe en `/administradores/` (ADR-017).
 
 ## Stack Principal
 
@@ -46,7 +51,9 @@ npm install
 No se requiere archivo `.env`. Las credenciales de Firebase se
 configuran exclusivamente mediante `google-services.json`.
 
-iOS no está probado ni soportado activamente.
+**iOS no está soportado.** El Foreground Service tipo `location` depende
+de APIs nativas de Android que no existen en iOS. Esta app es
+Android-only y no está probada en iOS.
 
 ## Scripts
 
@@ -64,9 +71,14 @@ src/
 ├── DriverApp.tsx              # Entrypoint, auth gate
 ├── screen/
 │   ├── LoginDriverScreen.tsx  # Login con DNI
-│   └── SendCoordinates.tsx    # Tracking, permisos, GPS, debug console
+│   ├── SendCoordinates.tsx    # Tracking, permisos, GPS, debug console
+│   └── admin/                 # Módulo admin (CRUD de flota)
+│       ├── ChoferesScreen.tsx
+│       ├── BusesScreen.tsx
+│       └── AsignacionesScreen.tsx
 └── services/
-    └── firebase_service.ts    # Escritura a RTDB
+    ├── firebase_service.ts    # Escritura a RTDB (tracking)
+    └── admin_service.ts       # CRUD de conductores, buses, asignaciones
 ```
 
 ## Flujo de Tracking
@@ -90,6 +102,24 @@ UserApp (vía listener propio)
 Para el detalle del payload y la estructura del nodo de tracking,
 consultar `FIREBASE_SCHEMA.md`.
 
+## Módulo admin
+
+Además del tracking, la DriverApp incluye un módulo de administración
+accesible para usuarios registrados en `/administradores/`. Funcionalidades
+implementadas:
+
+- **Choferes:** crear, listar, activar/desactivar y eliminar conductores.
+  Cada creación genera una cuenta Firebase Auth (`{dni}@conductor.com`)
+  y el nodo en `/choferes/{dni}`.
+- **Buses:** registrar buses con placa, activar/desactivar y eliminar.
+  Al crear, se inicializa `/ubicacion_buses/{placa}` con `isActive: false`.
+- **Asignaciones diarias:** vincular un conductor con un bus para el día
+  actual. Valida que ni el conductor ni el bus tengan otra asignación
+  activa hoy. Cancelar desactiva sin eliminar el registro histórico.
+
+> El mismo panel está disponible en versión web en `AdminWeb/`. La
+> lógica CRUD es compartida conceptualmente (mismo esquema de RTDB).
+
 ## Estado de Implementación
 
 - Login con DNI + contraseña.
@@ -97,6 +127,7 @@ consultar `FIREBASE_SCHEMA.md`.
 - Rastreo GPS continuo con foreground service.
 - Compatibilidad total con Android 14.
 - Transmisión ininterrumpida incluso con la app en segundo plano.
+- Módulo admin: CRUD de choferes, buses y asignaciones (implementado).
 
 **Pendiente**: geofencing, control de turnos.
 
@@ -111,5 +142,4 @@ consultar `FIREBASE_SCHEMA.md`.
 | `ROADMAP.md` | Fases, prioridades y tareas pendientes del proyecto. |
 | `TROUBLESHOOTING.md` | Guía operativa para diagnosticar problemas conocidos. |
 | `DECISIONS.md` | Decisiones de arquitectura (ADR) del ecosistema. |
-| `ReviewNotes.md` | Notas de revisión futura para mantenimiento de documentación. |
 | `BUGS_RESUELTOS/` | Historial de bugs resueltos durante el desarrollo. |
